@@ -3,11 +3,14 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import {
   ACTIVE_ARENA_URL,
   buildArena,
+  getActiveLevel,
   setActiveLevel,
   type LevelFile,
   type MapDecoration,
+  type MapTheme,
 } from "@fps/shared";
 import { createAtmosphere } from "./sky";
+import { placeWesternBorder } from "./westernBorder";
 
 const MODEL_BASE = "/models/";
 
@@ -48,10 +51,41 @@ async function loadModelLibrary(
   return lib;
 }
 
+function desertTintObject(root: THREE.Object3D): void {
+  root.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const srcMats = Array.isArray(mesh.material)
+      ? mesh.material
+      : [mesh.material];
+    const tinted = srcMats.map((m) => {
+      const std = (m as THREE.MeshStandardMaterial).clone();
+      if (!std.color) return std;
+      const c = std.color;
+      // Anything greenish → warm sandstone; otherwise warm adobe lean
+      const gHeavy = c.g > c.r * 0.92 && c.g > c.b * 0.9;
+      if (gHeavy || c.g > 0.35) {
+        std.color.setHex(0xc9a66b);
+        if (std.map) {
+          std.map = null;
+          std.color.setHex(0xb8894e);
+        }
+      } else {
+        std.color.lerp(new THREE.Color(0xd2b48c), 0.45);
+      }
+      std.roughness = Math.min(1, (std.roughness ?? 0.8) + 0.12);
+      std.needsUpdate = true;
+      return std;
+    });
+    mesh.material = tinted.length === 1 ? tinted[0]! : tinted;
+  });
+}
+
 function placeDecoration(
   scene: THREE.Scene,
   lib: Map<string, THREE.Object3D>,
   d: MapDecoration,
+  theme: MapTheme = "grass",
 ): void {
   const template = lib.get(d.model);
   if (!template) return;
@@ -60,6 +94,7 @@ function placeDecoration(
   inst.scale.setScalar(scale);
   inst.rotation.y = d.yaw ?? 0;
   inst.position.set(d.x, d.y, d.z);
+  if (theme === "desert") desertTintObject(inst);
   scene.add(inst);
 }
 
@@ -289,6 +324,57 @@ function makeGrassMaps(size = 512): {
   };
 }
 
+/** Warm desert sand with soft dunes and dusty scrub noise. */
+function makeSandMaps(size = 512): {
+  map: THREE.CanvasTexture;
+  bumpMap: THREE.CanvasTexture;
+} {
+  const color = document.createElement("canvas");
+  color.width = size;
+  color.height = size;
+  const cctx = color.getContext("2d")!;
+  const cimg = cctx.createImageData(size, size);
+
+  const bump = document.createElement("canvas");
+  bump.width = size;
+  bump.height = size;
+  const bctx = bump.getContext("2d")!;
+  const bimg = bctx.createImageData(size, size);
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = x / size;
+      const v = y / size;
+      const n = fbm(u * 5, v * 5, 5);
+      const dunes = fbm(u * 2.2 + 3, v * 2.8 + 1, 3);
+      const grit = valueNoise(u * 40, v * 40);
+
+      const r = 180 + n * 40 + dunes * 28 + grit * 18;
+      const g = 140 + n * 35 + dunes * 22 + grit * 12;
+      const b = 88 + n * 22 + dunes * 14 + grit * 8;
+
+      const i = (y * size + x) * 4;
+      cimg.data[i] = Math.min(255, r);
+      cimg.data[i + 1] = Math.min(255, g);
+      cimg.data[i + 2] = Math.min(255, b);
+      cimg.data[i + 3] = 255;
+
+      const h = Math.floor((n * 0.55 + dunes * 0.3 + grit * 0.15) * 255);
+      bimg.data[i] = h;
+      bimg.data[i + 1] = h;
+      bimg.data[i + 2] = h;
+      bimg.data[i + 3] = 255;
+    }
+  }
+  cctx.putImageData(cimg, 0, 0);
+  bctx.putImageData(bimg, 0, 0);
+
+  return {
+    map: canvasToTexture(color, 1, 1, true),
+    bumpMap: canvasToTexture(bump, 1, 1, false),
+  };
+}
+
 /** Soft caustic / ripple water albedo + flowing normal-ish bump. */
 function makeWaterMaps(size = 512): {
   map: THREE.CanvasTexture;
@@ -352,32 +438,28 @@ function addBaseGround(
   scene: THREE.Scene,
   arenaW: number,
   arenaD: number,
+  theme: MapTheme,
 ): { update: (dt: number, now: number) => void } {
-  const grass = makeGrassMaps();
-  const water = makeWaterMaps();
+  const desert = theme === "desert";
+  const turf = desert ? makeSandMaps() : makeGrassMaps();
+  const water = desert ? null : makeWaterMaps();
 
-  // ~1 tile per 2–3 meters so grass reads at play scale
   const groundRepeatX = (arenaW + 2) / 2.4;
   const groundRepeatY = (arenaD + 2) / 2.4;
-  grass.map.repeat.set(groundRepeatX, groundRepeatY);
-  grass.bumpMap.repeat.set(groundRepeatX, groundRepeatY);
+  turf.map.repeat.set(groundRepeatX, groundRepeatY);
+  turf.bumpMap.repeat.set(groundRepeatX, groundRepeatY);
 
   const skirtRepX = (arenaW + 52) / 3.2;
   const skirtRepY = (arenaD + 52) / 3.2;
 
-  const waterRepX = 9 / 1.8;
-  const waterRepY = (arenaD * 0.88) / 1.8;
-  water.map.repeat.set(waterRepX, waterRepY);
-  water.bumpMap.repeat.set(waterRepX, waterRepY);
-
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(arenaW + 2, arenaD + 2),
     new THREE.MeshStandardMaterial({
-      map: grass.map,
-      bumpMap: grass.bumpMap,
-      bumpScale: 0.08,
-      color: 0xb8d4a0,
-      roughness: 0.92,
+      map: turf.map,
+      bumpMap: turf.bumpMap,
+      bumpScale: desert ? 0.1 : 0.08,
+      color: desert ? 0xe8c896 : 0xb8d4a0,
+      roughness: desert ? 0.96 : 0.92,
       metalness: 0.02,
     }),
   );
@@ -385,56 +467,93 @@ function addBaseGround(
   ground.position.y = 0.0;
   scene.add(ground);
 
-  const riverMat = new THREE.MeshStandardMaterial({
-    map: water.map,
-    bumpMap: water.bumpMap,
-    bumpScale: 0.12,
-    color: 0x8ecfe0,
-    roughness: 0.22,
-    metalness: 0.18,
-    transparent: true,
-    opacity: 0.88,
-    envMapIntensity: 0.6,
-  });
-  const river = new THREE.Mesh(
-    new THREE.PlaneGeometry(9, arenaD * 0.88, 1, 32),
-    riverMat,
-  );
-  river.rotation.x = -Math.PI / 2;
-  river.position.set(0, 0.025, 0);
-  scene.add(river);
+  let riverMat: THREE.MeshStandardMaterial | null = null;
+  if (water) {
+    const waterRepX = 9 / 1.8;
+    const waterRepY = (arenaD * 0.88) / 1.8;
+    water.map.repeat.set(waterRepX, waterRepY);
+    water.bumpMap.repeat.set(waterRepX, waterRepY);
 
-  // Soft foam strip along banks
-  const foam = new THREE.Mesh(
-    new THREE.PlaneGeometry(9.35, arenaD * 0.88),
-    new THREE.MeshStandardMaterial({
-      color: 0xd0eef5,
+    riverMat = new THREE.MeshStandardMaterial({
+      map: water.map,
+      bumpMap: water.bumpMap,
+      bumpScale: 0.12,
+      color: 0x8ecfe0,
+      roughness: 0.22,
+      metalness: 0.18,
       transparent: true,
-      opacity: 0.18,
-      roughness: 0.6,
-      metalness: 0,
-      depthWrite: false,
-    }),
-  );
-  foam.rotation.x = -Math.PI / 2;
-  foam.position.set(0, 0.022, 0);
-  scene.add(foam);
+      opacity: 0.88,
+      envMapIntensity: 0.6,
+    });
+    const river = new THREE.Mesh(
+      new THREE.PlaneGeometry(9, arenaD * 0.88, 1, 32),
+      riverMat,
+    );
+    river.rotation.x = -Math.PI / 2;
+    river.position.set(0, 0.025, 0);
+    scene.add(river);
 
-  const skirtMap = grass.map.clone();
+    const foam = new THREE.Mesh(
+      new THREE.PlaneGeometry(9.35, arenaD * 0.88),
+      new THREE.MeshStandardMaterial({
+        color: 0xd0eef5,
+        transparent: true,
+        opacity: 0.18,
+        roughness: 0.6,
+        metalness: 0,
+        depthWrite: false,
+      }),
+    );
+    foam.rotation.x = -Math.PI / 2;
+    foam.position.set(0, 0.022, 0);
+    scene.add(foam);
+  } else {
+    // Dry wash / gulch down the middle — cracked darker sand
+    const wash = new THREE.Mesh(
+      new THREE.PlaneGeometry(10.5, arenaD * 0.88),
+      new THREE.MeshStandardMaterial({
+        map: turf.map,
+        bumpMap: turf.bumpMap,
+        bumpScale: 0.14,
+        color: 0xc4a06a,
+        roughness: 1,
+        metalness: 0,
+      }),
+    );
+    wash.rotation.x = -Math.PI / 2;
+    wash.position.set(2.5, 0.018, 0);
+    scene.add(wash);
+
+    const bank = new THREE.Mesh(
+      new THREE.PlaneGeometry(11.2, arenaD * 0.88),
+      new THREE.MeshStandardMaterial({
+        color: 0xa87848,
+        transparent: true,
+        opacity: 0.22,
+        roughness: 1,
+        metalness: 0,
+        depthWrite: false,
+      }),
+    );
+    bank.rotation.x = -Math.PI / 2;
+    bank.position.set(2.5, 0.015, 0);
+    scene.add(bank);
+  }
+
+  const skirtMap = turf.map.clone();
   skirtMap.needsUpdate = true;
   skirtMap.repeat.set(skirtRepX, skirtRepY);
-  const skirtBump = grass.bumpMap.clone();
+  const skirtBump = turf.bumpMap.clone();
   skirtBump.needsUpdate = true;
   skirtBump.repeat.set(skirtRepX, skirtRepY);
 
-  // Wide skirt under the forest ring (darker so the woods read as deep)
   const skirt = new THREE.Mesh(
     new THREE.PlaneGeometry(arenaW + 52, arenaD + 52),
     new THREE.MeshStandardMaterial({
       map: skirtMap,
       bumpMap: skirtBump,
       bumpScale: 0.06,
-      color: 0x4a6a3c,
+      color: desert ? 0x9a7348 : 0x4a6a3c,
       roughness: 1,
       metalness: 0,
     }),
@@ -445,7 +564,7 @@ function addBaseGround(
 
   return {
     update(dt: number, now: number) {
-      // Flow along the river (Z) + slight lateral drift
+      if (!water || !riverMat) return;
       water.map.offset.y -= dt * 0.045;
       water.map.offset.x += dt * 0.008;
       water.bumpMap.offset.y -= dt * 0.06;
@@ -461,32 +580,46 @@ function addBaseGround(
 /**
  * Fighting arena visuals from `/arenas/*.json` + `/models/*.glb`.
  */
-export async function createWorld(scene: THREE.Scene) {
+export async function createWorld(
+  scene: THREE.Scene,
+  arenaUrl = ACTIVE_ARENA_URL,
+) {
   try {
-    const res = await fetch(ACTIVE_ARENA_URL);
+    const res = await fetch(arenaUrl);
     if (res.ok) {
       const level = (await res.json()) as LevelFile;
       setActiveLevel(level);
     } else {
-      console.warn(`[world] ${ACTIVE_ARENA_URL} → ${res.status}, using default`);
+      console.warn(`[world] ${arenaUrl} → ${res.status}, using default`);
     }
   } catch (err) {
-    console.warn(`[world] failed to load ${ACTIVE_ARENA_URL}`, err);
+    console.warn(`[world] failed to load ${arenaUrl}`, err);
   }
 
   const arena = buildArena();
+  const theme: MapTheme =
+    arena.theme ??
+    (getActiveLevel().theme === "desert" ? "desert" : "grass");
+  const desert = theme === "desert";
+
   const lib = await loadModelLibrary([
     ...arena.decorations.map((d) => d.model),
-    ...FOREST_MODELS,
+    ...(desert ? [] : [...FOREST_MODELS]),
   ]);
 
-  const groundFx = addBaseGround(scene, arena.arenaW, arena.arenaD);
+  const groundFx = addBaseGround(scene, arena.arenaW, arena.arenaD, theme);
 
   for (const d of arena.decorations) {
-    placeDecoration(scene, lib, d);
+    placeDecoration(scene, lib, d, theme);
   }
 
-  placeForestBorder(scene, lib, arena.arenaW, arena.arenaD);
+  let borderFx: { update: (dt: number) => void };
+  if (desert) {
+    borderFx = placeWesternBorder(scene, arena.arenaW, arena.arenaD);
+  } else {
+    placeForestBorder(scene, lib, arena.arenaW, arena.arenaD);
+    borderFx = { update() {} };
+  }
 
   for (const spawn of arena.spawns) {
     const pad = new THREE.Mesh(
@@ -508,7 +641,7 @@ export async function createWorld(scene: THREE.Scene) {
     scene.add(pad);
   }
 
-  const atmosphere = createAtmosphere(scene);
+  const atmosphere = createAtmosphere(scene, theme);
 
   return {
     solids: arena.solids,
@@ -516,6 +649,7 @@ export async function createWorld(scene: THREE.Scene) {
     updateSky(dt: number, now: number) {
       atmosphere.update(dt, now);
       groundFx.update(dt, now);
+      borderFx.update(dt);
     },
   };
 }

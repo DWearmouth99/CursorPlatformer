@@ -1,4 +1,4 @@
-import { GUN_GAME_LENGTH, MAX_HP } from "@fps/shared";
+import { MAX_HP } from "@fps/shared";
 
 export type HudState = {
   hp: number;
@@ -9,21 +9,28 @@ export type HudState = {
   className: string;
   weaponName: string;
   statusText: string;
-  gunLevel: number;
+  /** 0..1 progress toward win (ladder / kills / hill score). */
+  progress: number;
+  progressLabel: string;
+  progressDetail: string;
+  progressHint: string;
   scoreboardOpen: boolean;
+  scoreHeader: string;
   players: Array<{
     id: string;
+    displayName: string;
     team: string;
     weaponLabel: string;
+    score: number;
     kills: number;
     deaths: number;
     isLocal: boolean;
   }>;
 };
 
-function displayName(id: string, isLocal: boolean): string {
-  if (id.startsWith("Bot-")) return `${id} · AI`;
-  return isLocal ? `${id} · you` : id;
+function displayName(id: string, label: string, isLocal: boolean): string {
+  if (id.startsWith("Bot-")) return `${label} · AI`;
+  return isLocal ? `${label} · you` : label;
 }
 
 export function createHud() {
@@ -40,9 +47,14 @@ export function createHud() {
   const damageFlashEl = document.getElementById("damage-flash")!;
   const scoreboardEl = document.getElementById("scoreboard")!;
   const scoreboardBody = document.getElementById("scoreboard-body")!;
+  const scoreboardScoreH = document.getElementById("scoreboard-score-h");
   const respawnEl = document.getElementById("respawn-msg")!;
   const statusEl = document.getElementById("hud-status")!;
   const ladderFillEl = document.getElementById("gun-ladder-fill");
+  const ladderTitleEl = document.getElementById("gun-ladder-title");
+  const ladderLevelEl = document.getElementById("gun-ladder-level");
+  const ladderWeaponEl = document.getElementById("gun-ladder-weapon");
+  const ladderNextEl = document.getElementById("gun-ladder-next");
 
   let hitMarkerUntil = 0;
   let flashUntil = 0;
@@ -81,7 +93,12 @@ export function createHud() {
   function pushKill(
     killerId: string,
     victimId: string,
-    opts: { headshot?: boolean; localId?: string | null } = {},
+    opts: {
+      headshot?: boolean;
+      localId?: string | null;
+      killerName?: string;
+      victimName?: string;
+    } = {},
   ): void {
     const youKiller = opts.localId != null && killerId === opts.localId;
     const youVictim = opts.localId != null && victimId === opts.localId;
@@ -92,7 +109,11 @@ export function createHud() {
 
     const killer = document.createElement("span");
     killer.className = "kill-name kill-killer";
-    killer.textContent = displayName(killerId, youKiller);
+    killer.textContent = displayName(
+      killerId,
+      opts.killerName ?? killerId,
+      youKiller,
+    );
 
     const verb = document.createElement("span");
     verb.className = "kill-verb";
@@ -100,7 +121,11 @@ export function createHud() {
 
     const victim = document.createElement("span");
     victim.className = "kill-name kill-victim";
-    victim.textContent = displayName(victimId, youVictim);
+    victim.textContent = displayName(
+      victimId,
+      opts.victimName ?? victimId,
+      youVictim,
+    );
 
     row.append(killer, verb, victim);
     if (opts.headshot) {
@@ -143,13 +168,14 @@ export function createHud() {
     statusEl.textContent = state.statusText;
     statusEl.classList.toggle("hidden", !state.statusText);
 
+    if (ladderTitleEl) ladderTitleEl.textContent = state.className;
+    if (ladderLevelEl) ladderLevelEl.textContent = state.progressLabel;
+    if (ladderWeaponEl) ladderWeaponEl.textContent = state.progressDetail;
+    if (ladderNextEl) ladderNextEl.textContent = state.progressHint;
     if (ladderFillEl) {
-      const pct = Math.max(
-        0,
-        Math.min(100, ((state.gunLevel + 1) / GUN_GAME_LENGTH) * 100),
-      );
-      ladderFillEl.style.width = `${pct}%`;
+      ladderFillEl.style.width = `${Math.max(0, Math.min(100, state.progress * 100))}%`;
     }
+    if (scoreboardScoreH) scoreboardScoreH.textContent = state.scoreHeader;
 
     hitMarkerEl.classList.toggle("visible", now < hitMarkerUntil);
 
@@ -172,17 +198,19 @@ export function createHud() {
 
     if (state.scoreboardOpen) {
       const sorted = [...state.players].sort(
-        (a, b) => b.kills - a.kills || a.deaths - b.deaths,
+        (a, b) =>
+          b.score - a.score || b.kills - a.kills || a.deaths - b.deaths,
       );
       scoreboardBody.innerHTML = sorted
         .map((p, i) => {
-          const name = displayName(p.id, p.isLocal);
+          const name = displayName(p.id, p.displayName, p.isLocal);
           const gun = p.weaponLabel.replace(/^\d+\.\s*/, "");
           return (
             `<tr class="${p.isLocal ? "local" : ""}">` +
             `<td class="col-rank">${i + 1}</td>` +
             `<td class="col-player"><span class="sb-name">${name}</span></td>` +
             `<td class="col-gun">${gun}</td>` +
+            `<td class="col-stat">${Math.floor(p.score)}</td>` +
             `<td class="col-stat">${p.kills}</td>` +
             `<td class="col-stat">${p.deaths}</td>` +
             `</tr>`

@@ -44,6 +44,22 @@ export function resolveWsUrl(): string {
   return `${wsProto}//${host}`;
 }
 
+/** REST API base (same host as WS in production; dev server → :3001). */
+export function resolveApiUrl(): string {
+  if (typeof window === "undefined" || typeof location === "undefined") {
+    return "http://localhost:3001";
+  }
+  const { protocol, hostname, port, host } = location;
+  const local =
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "[::1]";
+  if (local && (port === "5173" || port === "5174" || port === "")) {
+    return "http://localhost:3001";
+  }
+  return `${protocol}//${host}`;
+}
+
 /** Lateral eye offset when fully leaned (meters). */
 export const LEAN_LATERAL = 0.4;
 /** Camera roll at full lean (radians). */
@@ -81,8 +97,10 @@ export const MOVE = {
   FRICTION: 6,
   /** Speed below which friction stops you hard. */
   STOP_SPEED: 1.5,
-  /** Upward velocity when jumping. */
+  /** Upward velocity when jumping / double-jumping. */
   JUMP_VELOCITY: 7.2,
+  /** Extra mid-air jumps after leaving the ground (1 = classic double jump). */
+  AIR_JUMPS: 1,
   /** Gravity (m/s²). */
   GRAVITY: 20,
   /** Max fall / clamp. */

@@ -1,0 +1,616 @@
+
+/* ——— Gate: auth + lobby browser ——— */
+.gate-layout {
+  position: relative;
+  z-index: 1;
+  width: min(920px, 94vw);
+  margin: 0 auto;
+  padding: 4vh 0 6vh;
+}
+
+.gate-panel {
+  animation: gate-in 0.45s ease both;
+}
+
+.gate-panel.hidden {
+  display: none !important;
+}
+
+@keyframes gate-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.gate-card {
+  background: linear-gradient(
+    165deg,
+    rgba(92, 52, 22, 0.92) 0%,
+    rgba(58, 31, 12, 0.96) 100%
+  );
+  border: 4px solid var(--wood-line, #3a1f0c);
+  border-radius: 4px;
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 230, 160, 0.12);
+  padding: 1.35rem 1.5rem;
+  color: #fff4d0;
+}
+
+.gate-kicker {
+  font-family: "Exo 2", sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--gold, #f2d04a);
+  margin: 0 0 0.35rem;
+}
+
+.gate-title {
+  font-family: "Exo 2", sans-serif;
+  font-size: clamp(1.5rem, 4vw, 2rem);
+  font-weight: 800;
+  margin: 0 0 0.35rem;
+  color: #fff8e8;
+  text-shadow: 2px 2px 0 #1a0e06;
+}
+
+.gate-title-sm {
+  font-size: clamp(1.1rem, 3vw, 1.35rem);
+}
+
+.gate-sub {
+  font-family: "Exo 2", sans-serif;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  margin: 0 0 1.1rem;
+  opacity: 0.88;
+  max-width: 36em;
+}
+
+.gate-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.gate-tab {
+  flex: 1;
+  font-family: "Exo 2", sans-serif;
+  font-weight: 700;
+  font-size: 0.78rem;
+  padding: 0.55rem 0.75rem;
+  border: 2px solid var(--wood-line, #3a1f0c);
+  background: rgba(0, 0, 0, 0.25);
+  color: #ffeaa7;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+.gate-tab.active {
+  background: linear-gradient(180deg, #c4884a, #8b5a2b);
+  color: #fff8e8;
+}
+
+.gate-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.gate-form.hidden {
+  display: none;
+}
+
+.gate-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-family: "Exo 2", sans-serif;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #ffeaa7;
+}
+
+.gate-field input,
+.gate-field select {
+  font-family: "Exo 2", sans-serif;
+  font-size: 0.95rem;
+  font-weight: 500;
+  padding: 0.55rem 0.65rem;
+  border: 2px solid #3a1f0c;
+  border-radius: 2px;
+  background: rgba(255, 248, 220, 0.95);
+  color: #2a1808;
+  text-transform: none;
+}
+
+.gate-field input:focus,
+.gate-field select:focus {
+  outline: 2px solid var(--gold, #f2d04a);
+  outline-offset: 1px;
+}
+
+.gate-check {
+  flex-direction: row;
+  align-items: center;
+  text-transform: none;
+}
+
+.gate-check input {
+  width: auto;
+  margin-right: 0.5rem;
+}
+
+.gate-optional {
+  font-weight: 500;
+  opacity: 0.7;
+  text-transform: none;
+  font-style: normal;
+}
+
+.gate-error {
+  font-family: "Exo 2", sans-serif;
+  font-size: 0.82rem;
+  color: #ff8a80;
+  margin: 0;
+}
+
+.gate-error.hidden {
+  display: none;
+}
+
+.gate-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.5rem 0;
+  font-family: "Exo 2", sans-serif;
+  font-size: 0.75rem;
+  opacity: 0.65;
+}
+
+.gate-divider::before,
+.gate-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 234, 167, 0.25);
+}
+
+.wood-btn-ghost {
+  background: transparent !important;
+  box-shadow: inset 0 0 0 2px rgba(255, 234, 167, 0.35) !important;
+}
+
+.wood-btn-ghost span {
+  color: #ffeaa7 !important;
+}
+
+.wood-btn-xs {
+  width: auto;
+  min-width: 4.5rem;
+  padding: 0.35rem 0.65rem;
+}
+
+.wood-btn-xs span {
+  font-size: 0.48rem;
+}
+
+.gate-footer {
+  position: absolute;
+  bottom: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex;
+  gap: 1.25rem;
+}
+
+.gate-link-btn {
+  appearance: none;
+  border: none;
+  background: none;
+  font-family: "Exo 2", sans-serif;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #ffeaa7;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  opacity: 0.9;
+}
+
+.gate-link-btn:hover {
+  color: var(--gold, #f2d04a);
+}
+
+.gate-lobby-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.gate-lobby-grid {
+  display: grid;
+  grid-template-columns: minmax(200px, 240px) 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 720px) {
+  .gate-lobby-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.gate-profile-card {
+  text-align: center;
+}
+
+.profile-avatar {
+  width: 3.5rem;
+  height: 3.5rem;
+  margin: 0 auto 0.65rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: "Exo 2", sans-serif;
+  font-weight: 800;
+  font-size: 1.35rem;
+  background: linear-gradient(145deg, #f2d04a, #c9a018);
+  color: #3a1f0c;
+  border: 3px solid #3a1f0c;
+}
+
+.gate-profile-card h3 {
+  font-family: "Exo 2", sans-serif;
+  font-size: 1.05rem;
+  margin: 0 0 0.2rem;
+  color: #fff8e8;
+}
+
+.profile-handle {
+  font-family: "Exo 2", sans-serif;
+  font-size: 0.75rem;
+  opacity: 0.75;
+  margin: 0 0 0.85rem;
+}
+
+.profile-xp-label {
+  display: flex;
+  justify-content: space-between;
+  font-family: "Exo 2", sans-serif;
+  font-size: 0.68rem;
+  margin-bottom: 0.25rem;
+}
+
+.profile-xp-track {
+  height: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 0.85rem;
+}
+
+#profile-xp-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #76e056, #f2d04a);
+  transition: width 0.4s ease;
+}
+
+.profile-stats {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
+.profile-stats li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-family: "Exo 2", sans-serif;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+.profile-stats b {
+  font-size: 1.1rem;
+  color: var(--gold, #f2d04a);
+}
+
+.lobby-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.lobby-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
+}
+
+.lobby-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  background: rgba(0, 0, 0, 0.22);
+  border: 2px solid rgba(58, 31, 12, 0.8);
+  border-radius: 2px;
+}
+
+.lobby-row-name {
+  font-family: "Exo 2", sans-serif;
+  font-size: 0.92rem;
+  font-weight: 700;
+  margin: 0 0 0.15rem;
+  color: #fff8e8;
+}
+
+.lobby-row-meta {
+  font-family: "Exo 2", sans-serif;
+  font-size: 0.72rem;
+  margin: 0;
+  opacity: 0.75;
+}
+
+.lobby-row-side {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-shrink: 0;
+}
+
+.lobby-fill {
+  width: 48px;
+  height: 5px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.lobby-fill div {
+  height: 100%;
+  background: #76e056;
+}
+
+.lobby-count {
+  font-family: "Exo 2", sans-serif;
+  font-size: 0.72rem;
+  min-width: 2.5rem;
+  text-align: right;
+}
+
+.lobby-empty,
+.lobby-loading {
+  font-family: "Exo 2", sans-serif;
+  font-size: 0.85rem;
+  opacity: 0.75;
+  text-align: center;
+  padding: 1.5rem;
+}
+
+.lobby-empty.hidden {
+  display: none;
+}
+
+.gate-dialog {
+  border: none;
+  padding: 0;
+  background: transparent;
+  max-width: min(420px, 92vw);
+}
+
+.gate-dialog-wide {
+  max-width: min(560px, 94vw);
+  max-height: min(92vh, 900px);
+}
+
+.gate-dialog-wide .gate-create-form {
+  max-height: min(90vh, 880px);
+  overflow-y: auto;
+}
+
+.gate-dialog::backdrop {
+  background: rgba(8, 16, 10, 0.72);
+  backdrop-filter: blur(4px);
+}
+
+.gate-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.gate-sub-tight {
+  margin-bottom: 0.85rem;
+}
+
+.gate-create-form .gate-picker {
+  border: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  min-inline-size: 0;
+  display: block;
+}
+
+.gate-create-form .gate-picker legend {
+  font-family: "Exo 2", sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--gold, #f2d04a);
+  margin-bottom: 0.45rem;
+  padding: 0;
+}
+
+.gate-picker-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+  min-height: 4rem;
+}
+
+.gate-picker-grid-modes {
+  grid-template-columns: 1fr;
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
+}
+
+.gate-pick-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  text-align: left;
+  padding: 0;
+  border: 2px solid rgba(58, 31, 12, 0.85);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.28);
+  color: #fff4d0;
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+  font-family: "Exo 2", sans-serif;
+}
+
+.gate-pick-card:hover {
+  transform: translateY(-1px);
+  border-color: #c4884a;
+}
+
+.gate-pick-card[aria-selected="true"] {
+  border-color: #f2d04a;
+  box-shadow:
+    0 0 0 1px rgba(242, 208, 74, 0.35),
+    inset 0 0 0 1px rgba(242, 208, 74, 0.2);
+}
+
+.gate-pick-preview {
+  height: 72px;
+  position: relative;
+  overflow: hidden;
+}
+
+.gate-pick-preview::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 40%, rgba(20, 10, 4, 0.55));
+  pointer-events: none;
+}
+
+.gate-pick-preview-grass {
+  background:
+    radial-gradient(ellipse 80% 50% at 70% 20%, rgba(180, 220, 255, 0.45), transparent 55%),
+    linear-gradient(180deg, #7eb6d9 0%, #a8c97a 52%, #4f7a3a 100%);
+}
+
+.gate-pick-preview-desert {
+  background:
+    radial-gradient(ellipse 70% 45% at 30% 15%, rgba(255, 210, 140, 0.55), transparent 50%),
+    linear-gradient(180deg, #c9a06a 0%, #e0b878 38%, #b88445 100%);
+}
+
+.gate-pick-preview-mode {
+  height: 48px;
+  background:
+    linear-gradient(115deg, rgba(242, 208, 74, 0.25), transparent 55%),
+    linear-gradient(180deg, #5c3416, #3a1f0c);
+}
+
+.gate-pick-preview-snipers {
+  background:
+    radial-gradient(ellipse 60% 40% at 80% 30%, rgba(255, 255, 255, 0.35), transparent 50%),
+    linear-gradient(180deg, #2a3540 0%, #4a5a68 45%, #1a2228 100%);
+}
+
+.gate-pick-preview-koth {
+  background:
+    radial-gradient(circle at 50% 70%, rgba(242, 208, 74, 0.55), transparent 45%),
+    linear-gradient(180deg, #3a5a2a 0%, #6a8a40 40%, #2a4018 100%);
+}
+
+.gate-pick-body {
+  padding: 0.55rem 0.65rem 0.65rem;
+}
+
+.gate-pick-name {
+  display: block;
+  font-weight: 800;
+  font-size: 0.92rem;
+  color: #fff8e8;
+  margin-bottom: 0.15rem;
+}
+
+.gate-pick-tag {
+  display: block;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  opacity: 0.78;
+}
+
+.gate-create-row {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 0.65rem;
+}
+
+@media (max-width: 520px) {
+  .gate-picker-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .gate-create-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.gate-settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  background: rgba(8, 16, 10, 0.75);
+  backdrop-filter: blur(4px);
+}
+
+.gate-settings-overlay.hidden {
+  display: none !important;
+}
+
+.gate-settings-card {
+  width: min(360px, 90vw);
+}
+
+#main-menu .gate-card .menu-setting {
+  font-family: "Exo 2", sans-serif;
+}

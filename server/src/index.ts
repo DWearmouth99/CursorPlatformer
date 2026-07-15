@@ -3,56 +3,30 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, WebSocket } from "ws";
-import {
-  ACTIVE_ARENA_FILE,
-  TICK_MS,
-  buildArena,
-  setActiveLevel,
-  type ClientMsg,
-  type LevelFile,
-} from "@fps/shared";
-import { createLobby, type Lobby, type NetPlayer } from "./lobby.js";
+import { TICK_MS, type ClientMsg, type JoinMsg } from "@fps/shared";
+import { createApiHandler } from "./api.js";
+import { verifyToken } from "./auth.js";
+import { createLobbyManager } from "./lobbyManager.js";
+import { resolveMapPaths } from "./maps.js";
+import { flushStore, getProfile, initStore } from "./store.js";
+import type { NetPlayer } from "./lobby.js";
 
 const PORT = Number(process.env.PORT ?? 3001);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIST = path.resolve(__dirname, "../../client/dist");
 const CLIENT_PUBLIC = path.resolve(__dirname, "../../client/public");
+const DATA_DIR = process.env.DATA_DIR ?? path.resolve(__dirname, "../../data");
 
-function loadActiveArena(): void {
-  const candidates = [
-    path.join(CLIENT_PUBLIC, "arenas", ACTIVE_ARENA_FILE),
-    path.join(CLIENT_DIST, "arenas", ACTIVE_ARENA_FILE),
-  ];
-  for (const filePath of candidates) {
-    if (!fs.existsSync(filePath)) continue;
-    try {
-      const level = JSON.parse(fs.readFileSync(filePath, "utf8")) as LevelFile;
-      setActiveLevel(level);
-      console.log(`[server] arena: ${level.name ?? ACTIVE_ARENA_FILE} ← ${filePath}`);
-      return;
-    } catch (err) {
-      console.warn(`[server] failed to read ${filePath}`, err);
-    }
-  }
-  console.warn(
-    `[server] ${ACTIVE_ARENA_FILE} not found — using bundled default arena`,
-  );
-}
+initStore(DATA_DIR);
 
-loadActiveArena();
-const arena = buildArena();
 let nextId = 1;
 const allocId = () => String(nextId++);
 
-const lobby = createLobby("gun_game", arena.solids, allocId);
+const arenaDirs = resolveMapPaths(CLIENT_PUBLIC, CLIENT_DIST);
+const lobbies = createLobbyManager(arenaDirs, allocId);
+const handleApi = createApiHandler(lobbies);
 
-type Session = { lobby: Lobby; player: NetPlayer };
-
-function findSession(ws: WebSocket): Session | null {
-  const player = lobby.findByWs(ws);
-  if (player) return { lobby, player };
-  return null;
-}
+type Session = { lobbyId: string; player: NetPlayer };
 
 function onMessage(ws: WebSocket, session: Session | null, raw: string): void {
   let msg: ClientMsg;
@@ -65,30 +39,74 @@ function onMessage(ws: WebSocket, session: Session | null, raw: string): void {
 
   if (msg.type === "join") {
     if (session) return;
-    const player = lobby.spawnPlayer(ws);
-    // syncBots runs inside spawnPlayer (fill/replace AI seats)
-    console.log(
-      `[server] joined gun_game as ${player.id} (players=${lobby.players.size} bots=${
-        [...lobby.players.values()].filter((p) => p.isBot).length
-      })`,
-    );
+    handleJoin(ws, msg);
     return;
   }
 
   if (!session) return;
-  session.lobby.handleMessage(session.player, msg);
+  const room = lobbies.get(session.lobbyId);
+  if (!room) return;
+  room.instance.handleMessage(session.player, msg);
+}
+
+function handleJoin(ws: WebSocket, msg: JoinMsg): void {
+  const lobbyId = msg.lobbyId?.trim() || "official";
+  const room = lobbies.get(lobbyId);
+  if (!room) {
+    ws.close(4004, "Lobby not found");
+    return;
+  }
+
+  const check = lobbies.canJoin(lobbyId, msg.password);
+  if (!check.ok) {
+    ws.close(4003, check.error);
+    return;
+  }
+
+  let accountId: string | null = null;
+  let displayName = msg.displayName?.trim().slice(0, 24) ?? "";
+
+  if (msg.token) {
+    const auth = verifyToken(msg.token);
+    if (auth) {
+      accountId = auth.userId;
+      if (!displayName) {
+        const profile = getProfile(auth.userId);
+        displayName = profile?.displayName ?? "Player";
+      }
+    }
+  }
+
+  if (!displayName) {
+    displayName = `Guest-${Math.floor(Math.random() * 9000 + 1000)}`;
+  }
+
+  const result = lobbies.joinPlayer(lobbyId, ws, {
+    accountId,
+    displayName,
+  });
+  if ("error" in result) {
+    ws.close(4003, result.error);
+    return;
+  }
+
+  console.log(
+    `[server] ${displayName} joined ${lobbyId} (${room.name})`,
+  );
 }
 
 function onWsConnection(ws: WebSocket): void {
   ws.on("message", (data) => {
     const raw = typeof data === "string" ? data : data.toString();
-    let session = findSession(ws);
+    const found = lobbies.findSession(ws);
+    const session = found
+      ? { lobbyId: found.room.id, player: found.player }
+      : null;
     onMessage(ws, session, raw);
-    if (!session) session = findSession(ws);
   });
 
   ws.on("close", () => {
-    lobby.removeByWs(ws);
+    lobbies.leaveByWs(ws);
   });
 }
 
@@ -153,17 +171,32 @@ function serveStatic(
   fs.createReadStream(filePath).pipe(res);
 }
 
-const httpServer = http.createServer(serveStatic);
+const httpServer = http.createServer((req, res) => {
+  void handleApi(req, res).then((handled) => {
+    if (handled) return;
+    serveStatic(req, res);
+  });
+});
+
 const wss = new WebSocketServer({ server: httpServer });
 wss.on("connection", onWsConnection);
 
 setInterval(() => {
-  lobby.tickOnce();
+  lobbies.tickAll();
 }, TICK_MS);
+
+process.on("SIGINT", () => {
+  flushStore();
+  process.exit(0);
+});
+process.on("SIGTERM", () => {
+  flushStore();
+  process.exit(0);
+});
 
 httpServer.listen(PORT, () => {
   const hasClient = fs.existsSync(path.join(CLIENT_DIST, "index.html"));
   console.log(
-    `[server] listening on :${PORT} (gun game${hasClient ? "" : ", client/dist missing"})`,
+    `[server] listening on :${PORT} (lobbies + accounts${hasClient ? "" : ", client/dist missing"})`,
   );
 });

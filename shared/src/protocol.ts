@@ -4,7 +4,7 @@ import type { Vec3 } from "./math.js";
 import type { ClassId } from "./weapons.js";
 import type { AbilityFxEvent, PlayerStatus, WorldProp } from "./abilities.js";
 
-export type GameMode = "gun_game";
+export type GameMode = "gun_game" | "snipers_only" | "king_of_the_hill";
 
 export const BTN = {
   FORWARD: 1 << 0,
@@ -63,16 +63,28 @@ export function bitsToButtons(bits: number): CombatButtons {
   };
 }
 
-/** Client → server: join the Gun Game lobby. */
+/** Client → server: join a lobby room. */
 export type JoinMsg = {
   type: "join";
   mode?: GameMode;
+  lobbyId?: string;
+  password?: string;
+  /** Bearer token from /api/auth/login or register. */
+  token?: string;
+  /** Required for guests; overrides account display name when set. */
+  displayName?: string;
 };
 
 /** @deprecated Classes removed — ignored by server. */
 export type ChangeClassMsg = {
   type: "changeClass";
   classId: ClassId;
+};
+
+/** Client → server: pick loadout weapon (Snipers / KOTH). */
+export type SelectLoadoutMsg = {
+  type: "selectLoadout";
+  weaponId: string;
 };
 
 /** Client → server: wish input only (never positions or hit claims). */
@@ -100,6 +112,7 @@ export type SnapshotPlayer = {
   crouching: boolean;
   grounded: boolean;
   jumpHeld: boolean;
+  airJumpsLeft: number;
   hp: number;
   alive: boolean;
   ammo: number;
@@ -111,10 +124,16 @@ export type SnapshotPlayer = {
   ab1CdMs: number;
   ab2CdMs: number;
   status: PlayerStatus;
-  /** Gun Game ladder index 0..19. */
+  /** Gun Game ladder index 0..n. */
   gunLevel: number;
   /** Resolved weapon display name. */
   weaponName: string;
+  /** Active weapon id (all modes). */
+  weaponId: string;
+  /** Mode score: sniper kills-to-win progress / KOTH hill points. */
+  score: number;
+  /** Account or guest display name. */
+  displayName: string;
 };
 
 export type WelcomeMsg = {
@@ -126,6 +145,13 @@ export type WelcomeMsg = {
   tick: number;
   players: SnapshotPlayer[];
   props: WorldProp[];
+  lobbyId: string;
+  lobbyName: string;
+  mapId: string;
+  /** Weapons the player may choose (Snipers / KOTH). */
+  loadoutOptions?: Array<{ id: string; name: string; blurb: string }>;
+  scoreToWin?: number;
+  hill?: { x: number; y: number; z: number; radius: number };
 };
 
 export type SnapshotMsg = {
@@ -134,6 +160,15 @@ export type SnapshotMsg = {
   ackSeq: number;
   players: SnapshotPlayer[];
   props: WorldProp[];
+  /** Live King of the Hill zone state. */
+  hill?: {
+    x: number;
+    y: number;
+    z: number;
+    radius: number;
+    controllerId: string | null;
+    contested: boolean;
+  };
 };
 
 export type PlayerJoinedMsg = {
@@ -198,6 +233,19 @@ export type GunGameWinMsg = {
   playerId: string;
 };
 
+export type MatchWinMsg = {
+  type: "matchWin";
+  playerId: string;
+  mode: GameMode;
+};
+
+export type LoadoutChangedMsg = {
+  type: "loadoutChanged";
+  playerId: string;
+  weaponId: string;
+  weaponName: string;
+};
+
 export type ServerMsg =
   | WelcomeMsg
   | SnapshotMsg
@@ -210,12 +258,16 @@ export type ServerMsg =
   | AbilityFxMsg
   | ClassChangedMsg
   | GunAdvanceMsg
-  | GunGameWinMsg;
+  | GunGameWinMsg
+  | MatchWinMsg
+  | LoadoutChangedMsg;
 
-export type ClientMsg = JoinMsg | ChangeClassMsg | InputCmd;
+export type ClientMsg = JoinMsg | ChangeClassMsg | InputCmd | SelectLoadoutMsg;
 
 export function isGameMode(v: unknown): v is GameMode {
-  return v === "gun_game";
+  return (
+    v === "gun_game" || v === "snipers_only" || v === "king_of_the_hill"
+  );
 }
 
 export function parseServerMsg(data: string): ServerMsg | null {

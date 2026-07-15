@@ -1,6 +1,8 @@
 import { WebSocket } from "ws";
 import {
+  DEFAULT_HILL,
   GUN_GAME_LENGTH,
+  KOTH_POINTS_PER_SEC,
   MAX_HP,
   RESPAWN_MS,
   TICK_DT,
@@ -12,14 +14,20 @@ import {
   buttonsToBits,
   clonePoses,
   createMoveState,
+  defaultWeaponForMode,
   emptyStatus,
   eyePosition,
+  findLoadoutWeapon,
   getPlayerPoseAtTime,
   gunGameWeapon,
   lagCompRewindTicks,
+  loadoutOptionsForMode,
   meleeConeHits,
+  modeNeedsLoadout,
+  modeTitle,
   resolveFireStyle,
   pickFfaSpawn,
+  scoreToWin,
   serverHitscan,
   spreadAngles,
   type AABB,
@@ -43,6 +51,7 @@ const HISTORY_MAX = Math.ceil(350 / TICK_MS);
 const DUMMY_CLASS: ClassId = "frostbinder";
 /** Up to 3 filler bots; seats shrink as extra humans join. */
 const BOT_SLOT_NAMES = ["Bot-1", "Bot-2", "Bot-3"] as const;
+const KOTH_POINTS_PER_TICK = KOTH_POINTS_PER_SEC / TICK_RATE;
 
 export type NetPlayer = {
   id: string;
@@ -51,6 +60,8 @@ export type NetPlayer = {
   /** Null for AI bots. */
   ws: WebSocket | null;
   isBot: boolean;
+  accountId: string | null;
+  displayName: string;
   state: PlayerMoveState;
   hp: number;
   alive: boolean;
@@ -70,6 +81,10 @@ export type NetPlayer = {
   lean: number;
   status: PlayerStatus;
   gunLevel: number;
+  /** Locked loadout weapon id (Snipers / KOTH). */
+  weaponId: string;
+  /** Mode score (sniper kill race / KOTH control points). */
+  score: number;
   /** Client-reported RTT (ms) for lag-comp rewind. */
   smoothedRttMs: number;
   /** Shots left in current burst (procedural burst weapons). */
@@ -86,7 +101,7 @@ export type Lobby = {
   mode: GameMode;
   players: Map<string, NetPlayer>;
   tickOnce: () => void;
-  spawnPlayer: (ws: WebSocket) => NetPlayer;
+  spawnPlayer: (ws: WebSocket, meta: JoinMeta) => NetPlayer;
   handleMessage: (player: NetPlayer, msg: ClientMsg) => void;
   findByWs: (ws: WebSocket) => NetPlayer | null;
   removeByWs: (ws: WebSocket) => void;
@@ -94,31 +109,75 @@ export type Lobby = {
   syncBots: () => void;
 };
 
-export function createLobby(
-  mode: GameMode,
-  solids: readonly AABB[],
-  allocId: () => string,
-): Lobby {
+export type LobbyCreateOptions = {
+  mode: GameMode;
+  solids: readonly AABB[];
+  mapId: string;
+  lobbyId: string;
+  lobbyName: string;
+  allocId: () => string;
+  onMatchComplete?: (winnerId: string) => void;
+};
+
+export type JoinMeta = {
+  accountId: string | null;
+  displayName: string;
+};
+
+export function createLobby(options: LobbyCreateOptions): Lobby {
+  const {
+    mode,
+    solids,
+    mapId,
+    lobbyId,
+    lobbyName,
+    allocId,
+    onMatchComplete,
+  } = options;
   const players = new Map<string, NetPlayer>();
   const poseHistory: PoseHistoryFrame[] = [];
   let tick = 0;
-  let gunGameWinnerId: string | null = null;
-  /** After a win, freeze combat until this tick, then reset the ladder. */
+  let matchWinnerId: string | null = null;
+  /** After a win, freeze combat until this tick, then reset. */
   let matchFreezeUntilTick = 0;
+  const hill = { ...DEFAULT_HILL };
+  let hillControllerId: string | null = null;
+  let hillContested = false;
 
-  function resetGunGameRound(): void {
-    gunGameWinnerId = null;
+  function starterWeapon(): WeaponDef {
+    if (modeNeedsLoadout(mode)) {
+      return defaultWeaponForMode(mode) ?? gunGameWeapon(0);
+    }
+    return gunGameWeapon(0);
+  }
+
+  function pickBotWeaponId(): string {
+    const opts = loadoutOptionsForMode(mode);
+    if (opts.length === 0) return gunGameWeapon(0).id;
+    return opts[Math.floor(Math.random() * opts.length)]!.id;
+  }
+
+  function resetMatchRound(): void {
+    matchWinnerId = null;
     matchFreezeUntilTick = 0;
+    hillControllerId = null;
+    hillContested = false;
     for (const p of players.values()) {
       p.gunLevel = 0;
-      const w = gunGameWeapon(0);
+      p.score = 0;
+      if (modeNeedsLoadout(mode)) {
+        p.weaponId = p.isBot ? pickBotWeaponId() : starterWeapon().id;
+      } else {
+        p.weaponId = gunGameWeapon(0).id;
+      }
+      const w = weaponOf(p);
       p.ammo = w.magSize;
       p.reloading = false;
       p.sprayIndex = 0;
       p.kills = 0;
       p.deaths = 0;
     }
-    console.log(`[lobby:${mode}] new round`);
+    console.log(`[lobby:${lobbyId}] new ${modeTitle(mode)} round`);
     syncBots();
   }
 
@@ -149,14 +208,27 @@ export function createLobby(
     team: Team,
     ws: WebSocket | null,
     isBot: boolean,
+    displayName: string,
+    accountId: string | null = null,
   ): NetPlayer {
-    const starterAmmo = gunGameWeapon(0).magSize;
+    const weaponId = modeNeedsLoadout(mode)
+      ? isBot
+        ? pickBotWeaponId()
+        : starterWeapon().id
+      : gunGameWeapon(0).id;
+    const starterAmmo = (
+      modeNeedsLoadout(mode)
+        ? findLoadoutWeapon(mode, weaponId) ?? starterWeapon()
+        : gunGameWeapon(0)
+    ).magSize;
     return {
       id,
       team,
       classId: DUMMY_CLASS,
       ws,
       isBot,
+      accountId,
+      displayName,
       state: assignSpawn(team, id),
       hp: MAX_HP,
       alive: true,
@@ -176,6 +248,8 @@ export function createLobby(
       lean: 0,
       status: emptyStatus(),
       gunLevel: 0,
+      weaponId,
+      score: 0,
       smoothedRttMs: 120,
       burstRemaining: 0,
       burstNextTick: 0,
@@ -188,16 +262,16 @@ export function createLobby(
     players.delete(id);
     forgetBotMind(id);
     broadcast({ type: "playerLeft", playerId: id });
-    console.log(`[lobby:${mode}] bot leave ${id} players=${players.size}`);
+    console.log(`[lobby:${lobbyId}] bot leave ${id} players=${players.size}`);
   }
 
   function spawnBot(id: string): NetPlayer {
     const team = pickTeam();
-    const bot = makePlayer(id, team, null, true);
+    const bot = makePlayer(id, team, null, true, id);
     players.set(id, bot);
     broadcast({ type: "playerJoined", player: toSnapshot(bot) });
     console.log(
-      `[lobby:${mode}] bot join ${id} team=${team} players=${players.size}`,
+      `[lobby:${lobbyId}] bot join ${id} team=${team} players=${players.size}`,
     );
     return bot;
   }
@@ -219,7 +293,8 @@ export function createLobby(
   }
 
   function weaponOf(p: NetPlayer): WeaponDef {
-    return gunGameWeapon(p.gunLevel);
+    if (mode === "gun_game") return gunGameWeapon(p.gunLevel);
+    return findLoadoutWeapon(mode, p.weaponId) ?? starterWeapon();
   }
 
   function speedOf(p: NetPlayer) {
@@ -308,6 +383,7 @@ export function createLobby(
       crouching: p.state.crouching,
       grounded: p.state.grounded,
       jumpHeld: p.state.jumpHeld,
+      airJumpsLeft: p.state.airJumpsLeft,
       hp: p.hp,
       alive: p.alive,
       ammo: p.ammo,
@@ -320,6 +396,9 @@ export function createLobby(
       status: { ...p.status },
       gunLevel: p.gunLevel,
       weaponName: w.name,
+      weaponId: w.id,
+      score: p.score,
+      displayName: p.displayName,
     };
   }
 
@@ -381,29 +460,106 @@ export function createLobby(
     ];
   }
 
-  function onGunGameKill(shooter: NetPlayer): void {
-    if (gunGameWinnerId) return;
-    if (shooter.gunLevel >= GUN_GAME_LENGTH - 1) {
-      gunGameWinnerId = shooter.id;
-      matchFreezeUntilTick = tick + TICK_RATE * 8;
-      broadcast({ type: "gunGameWin", playerId: shooter.id });
-      console.log(`[lobby:${mode}] winner ${shooter.id} — match ending`);
+  function declareWinner(winner: NetPlayer): void {
+    if (matchWinnerId) return;
+    matchWinnerId = winner.id;
+    matchFreezeUntilTick = tick + TICK_RATE * 8;
+    if (mode === "gun_game") {
+      broadcast({ type: "gunGameWin", playerId: winner.id });
+    }
+    broadcast({ type: "matchWin", playerId: winner.id, mode });
+    onMatchComplete?.(winner.id);
+    console.log(
+      `[lobby:${lobbyId}] winner ${winner.displayName} (${modeTitle(mode)})`,
+    );
+  }
+
+  function onPlayerKill(shooter: NetPlayer): void {
+    if (matchWinnerId) return;
+
+    if (mode === "gun_game") {
+      if (shooter.gunLevel >= GUN_GAME_LENGTH - 1) {
+        declareWinner(shooter);
+        return;
+      }
+      shooter.gunLevel += 1;
+      const w = gunGameWeapon(shooter.gunLevel);
+      shooter.weaponId = w.id;
+      shooter.ammo = w.magSize;
+      shooter.reloading = false;
+      shooter.sprayIndex = 0;
+      broadcast({
+        type: "gunAdvance",
+        playerId: shooter.id,
+        gunLevel: shooter.gunLevel,
+        weaponName: w.name,
+      });
+      console.log(
+        `[lobby:${lobbyId}] ${shooter.displayName} advanced → ${shooter.gunLevel + 1} ${w.name}`,
+      );
       return;
     }
-    shooter.gunLevel += 1;
-    const w = gunGameWeapon(shooter.gunLevel);
-    shooter.ammo = w.magSize;
-    shooter.reloading = false;
-    shooter.sprayIndex = 0;
+
+    if (mode === "snipers_only") {
+      shooter.score = shooter.kills;
+      if (shooter.score >= scoreToWin(mode)) {
+        declareWinner(shooter);
+      }
+    }
+  }
+
+  function applyLoadout(player: NetPlayer, weaponId: string): boolean {
+    if (!modeNeedsLoadout(mode)) return false;
+    const w = findLoadoutWeapon(mode, weaponId);
+    if (!w) return false;
+    player.weaponId = w.id;
+    player.ammo = w.magSize;
+    player.reloading = false;
+    player.sprayIndex = 0;
+    player.burstRemaining = 0;
     broadcast({
-      type: "gunAdvance",
-      playerId: shooter.id,
-      gunLevel: shooter.gunLevel,
+      type: "loadoutChanged",
+      playerId: player.id,
+      weaponId: w.id,
       weaponName: w.name,
     });
-    console.log(
-      `[lobby:${mode}] ${shooter.id} advanced → ${shooter.gunLevel + 1} ${w.name}`,
-    );
+    return true;
+  }
+
+  function tickHill(): void {
+    if (mode !== "king_of_the_hill" || matchWinnerId) {
+      hillControllerId = null;
+      hillContested = false;
+      return;
+    }
+
+    const inside: NetPlayer[] = [];
+    for (const p of players.values()) {
+      if (!p.alive) continue;
+      const dx = p.state.position.x - hill.x;
+      const dz = p.state.position.z - hill.z;
+      if (dx * dx + dz * dz <= hill.radius * hill.radius) inside.push(p);
+    }
+
+    if (inside.length === 0) {
+      hillControllerId = null;
+      hillContested = false;
+      return;
+    }
+    if (inside.length > 1) {
+      hillControllerId = null;
+      hillContested = true;
+      return;
+    }
+
+    const sole = inside[0]!;
+    hillControllerId = sole.id;
+    hillContested = false;
+    sole.score += KOTH_POINTS_PER_TICK;
+    if (sole.score >= scoreToWin(mode)) {
+      sole.score = scoreToWin(mode);
+      declareWinner(sole);
+    }
   }
 
   function applyRawDamage(
@@ -440,7 +596,7 @@ export function createLobby(
         victimId: victim.id,
         isHeadshot: headshot,
       });
-      if (shooter) onGunGameKill(shooter);
+      if (shooter) onPlayerKill(shooter);
     }
   }
 
@@ -646,7 +802,7 @@ export function createLobby(
           victimId: victim.id,
           isHeadshot: info.head,
         });
-        onGunGameKill(shooter);
+        onPlayerKill(shooter);
       }
     }
   }
@@ -746,11 +902,11 @@ export function createLobby(
   function tickOnce(): void {
     tick += 1;
 
-    if (gunGameWinnerId && tick >= matchFreezeUntilTick) {
-      resetGunGameRound();
+    if (matchWinnerId && tick >= matchFreezeUntilTick) {
+      resetMatchRound();
     }
 
-    const frozen = gunGameWinnerId != null;
+    const frozen = matchWinnerId != null;
     if (!frozen) {
       const roster = [...players.values()];
       for (const p of roster) {
@@ -760,12 +916,25 @@ export function createLobby(
       for (const p of players.values()) {
         simulatePlayer(p);
       }
+      tickHill();
     }
 
     poseHistory.push({ tick, poses: clonePoses(currentPoses()) });
     while (poseHistory.length > HISTORY_MAX) poseHistory.shift();
 
     const all = [...players.values()].map(toSnapshot);
+    const hillSnap =
+      mode === "king_of_the_hill"
+        ? {
+            x: hill.x,
+            y: hill.y,
+            z: hill.z,
+            radius: hill.radius,
+            controllerId: hillControllerId,
+            contested: hillContested,
+          }
+        : undefined;
+
     for (const p of players.values()) {
       if (p.isBot || !p.ws) continue;
       send(p.ws, {
@@ -774,21 +943,29 @@ export function createLobby(
         ackSeq: p.lastProcessedSeq,
         players: all,
         props: [],
+        hill: hillSnap,
       });
     }
   }
 
-  function spawnPlayer(ws: WebSocket): NetPlayer {
+  function spawnPlayer(ws: WebSocket, meta: JoinMeta): NetPlayer {
     const id = allocId();
     const team = pickTeam();
-    const player = makePlayer(id, team, ws, false);
+    const displayName = meta.displayName.trim().slice(0, 24) || `Player-${id}`;
+    const player = makePlayer(
+      id,
+      team,
+      ws,
+      false,
+      displayName,
+      meta.accountId,
+    );
     players.set(id, player);
 
     console.log(
-      `[lobby:${mode}] join ${id} team=${team} players=${players.size}`,
+      `[lobby:${lobbyId}] join ${displayName} (${id}) team=${team} mode=${mode} players=${players.size}`,
     );
 
-    // Humans replace AI seats first so welcome sees the trimmed roster.
     syncBots();
 
     send(ws, {
@@ -796,10 +973,21 @@ export function createLobby(
       playerId: id,
       team,
       classId: DUMMY_CLASS,
-      mode: "gun_game",
+      mode,
       tick,
       players: [...players.values()].map(toSnapshot),
       props: [],
+      lobbyId,
+      lobbyName,
+      mapId,
+      loadoutOptions: modeNeedsLoadout(mode)
+        ? loadoutOptionsForMode(mode)
+        : undefined,
+      scoreToWin: scoreToWin(mode) || undefined,
+      hill:
+        mode === "king_of_the_hill"
+          ? { x: hill.x, y: hill.y, z: hill.z, radius: hill.radius }
+          : undefined,
     });
     broadcast({ type: "playerJoined", player: toSnapshot(player) }, id);
     return player;
@@ -807,6 +995,11 @@ export function createLobby(
 
   function handleMessage(player: NetPlayer, msg: ClientMsg): void {
     if (msg.type === "changeClass") return;
+    if (msg.type === "selectLoadout") {
+      if (typeof msg.weaponId !== "string") return;
+      applyLoadout(player, msg.weaponId);
+      return;
+    }
     if (msg.type !== "input") return;
     if (typeof msg.seq !== "number" || typeof msg.buttons !== "number") return;
     if (typeof msg.yaw !== "number" || typeof msg.pitch !== "number") return;
@@ -835,9 +1028,9 @@ export function createLobby(
       if (p.ws !== ws) continue;
       players.delete(id);
       broadcast({ type: "playerLeft", playerId: id });
-      console.log(`[lobby:${mode}] leave ${id} players=${players.size}`);
+      console.log(`[lobby:${lobbyId}] leave ${id} players=${players.size}`);
       if (humanCount() === 0) {
-        gunGameWinnerId = null;
+        matchWinnerId = null;
         matchFreezeUntilTick = 0;
       }
       syncBots();

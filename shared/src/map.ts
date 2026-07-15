@@ -5,7 +5,12 @@ import type { MapBox, MapDecoration, MapSurface, SpawnZone } from "./mapTypes.js
 import type { Vec3 } from "./math.js";
 
 export type { MapBox, MapDecoration, MapSurface, SpawnZone };
-export type { LevelFile, LevelProp, CompiledArena } from "./level.js";
+export type {
+  LevelFile,
+  LevelProp,
+  CompiledArena,
+  MapTheme,
+} from "./level.js";
 export { compileLevel } from "./level.js";
 export {
   MODEL_CATALOG,

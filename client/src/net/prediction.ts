@@ -38,6 +38,7 @@ export function createPrediction(
     grounded: false,
     crouching: false,
     jumpHeld: false,
+    airJumpsLeft: 1,
   });
 
   function resetFromSnapshot(snap: SnapshotPlayer): void {
@@ -52,6 +53,7 @@ export function createPrediction(
     predicted.crouching = snap.crouching;
     predicted.grounded = snap.grounded;
     predicted.jumpHeld = snap.jumpHeld;
+    predicted.airJumpsLeft = snap.airJumpsLeft ?? (snap.grounded ? 1 : 0);
     pending.length = 0;
   }
 
@@ -98,6 +100,7 @@ export function createPrediction(
       crouching: server.crouching,
       grounded: server.grounded,
       jumpHeld: server.jumpHeld,
+      airJumpsLeft: server.airJumpsLeft ?? (server.grounded ? 1 : 0),
     });
 
     const scale = getSpeedScale();
@@ -132,6 +135,7 @@ export function createPrediction(
       predicted.grounded = scratch.grounded;
       predicted.crouching = scratch.crouching;
       predicted.jumpHeld = scratch.jumpHeld;
+      predicted.airJumpsLeft = scratch.airJumpsLeft;
       return;
     }
 

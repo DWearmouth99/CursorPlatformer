@@ -16,29 +16,175 @@
     <div id="main-menu">
       <div class="menu-scene" aria-hidden="true"></div>
 
-      <div class="menu-shell">
-        <div id="menu-home" class="menu-panel">
-          <nav class="menu-actions" aria-label="Main menu">
-            <button type="button" id="play-btn" class="wood-btn">
-              <span>Play</span>
-            </button>
-            <button type="button" id="menu-continue-btn" class="wood-btn" disabled title="No saved match">
-              <span>Continue</span>
-            </button>
-            <button type="button" id="menu-settings-btn" class="wood-btn">
-              <span>Options</span>
-            </button>
-            <button type="button" id="menu-credits-btn" class="wood-btn">
-              <span>Credits</span>
-            </button>
-            <button type="button" id="menu-exit-btn" class="wood-btn">
-              <span>Exit</span>
-            </button>
-          </nav>
-        </div>
+      <div class="gate-layout">
+        <!-- ——— Sign in / register ——— -->
+        <section id="gate-auth" class="gate-panel gate-card">
+          <p class="gate-kicker">Welcome back, fragger</p>
+          <h1 class="gate-title">Cursor FPS</h1>
+          <p class="gate-sub">Create an account to save wins, XP, and climb the ladder.</p>
 
-        <div id="menu-settings" class="menu-panel menu-modal hidden">
-          <h2 class="menu-modal-title">Options</h2>
+          <div class="gate-tabs" role="tablist">
+            <button type="button" id="auth-tab-login" class="gate-tab active" role="tab">Sign in</button>
+            <button type="button" id="auth-tab-register" class="gate-tab" role="tab">Register</button>
+          </div>
+
+          <form id="auth-form-login" class="gate-form" autocomplete="on">
+            <label class="gate-field">
+              <span>Username</span>
+              <input id="auth-login-user" type="text" autocomplete="username" maxlength="20" required />
+            </label>
+            <label class="gate-field">
+              <span>Password</span>
+              <input id="auth-login-pass" type="password" autocomplete="current-password" required />
+            </label>
+            <p id="auth-login-error" class="gate-error hidden"></p>
+            <button type="submit" class="wood-btn"><span>Sign in</span></button>
+          </form>
+
+          <form id="auth-form-register" class="gate-form hidden" autocomplete="on">
+            <label class="gate-field">
+              <span>Username</span>
+              <input id="auth-reg-user" type="text" autocomplete="username" maxlength="20" required />
+            </label>
+            <label class="gate-field">
+              <span>Display name</span>
+              <input id="auth-reg-display" type="text" maxlength="24" required />
+            </label>
+            <label class="gate-field">
+              <span>Password</span>
+              <input id="auth-reg-pass" type="password" autocomplete="new-password" minlength="6" required />
+            </label>
+            <p id="auth-reg-error" class="gate-error hidden"></p>
+            <button type="submit" class="wood-btn"><span>Create account</span></button>
+          </form>
+
+          <div class="gate-divider"><span>or</span></div>
+
+          <form id="auth-form-guest" class="gate-form gate-form-guest">
+            <label class="gate-field">
+              <span>Play as guest</span>
+              <input id="auth-guest-name" type="text" maxlength="24" placeholder="Pick a name…" required />
+            </label>
+            <button type="submit" class="wood-btn wood-btn-ghost"><span>Jump in without saving</span></button>
+          </form>
+        </section>
+
+        <!-- ——— Lobby browser ——— -->
+        <section id="gate-lobbies" class="gate-panel hidden">
+          <header class="gate-lobby-header">
+            <div>
+              <p class="gate-kicker">Multiplayer</p>
+              <h2 class="gate-title gate-title-sm">Find a match</h2>
+            </div>
+            <button type="button" id="gate-signout" class="gate-link-btn" title="Sign out">Sign out</button>
+          </header>
+
+          <div class="gate-lobby-grid">
+            <aside class="gate-profile-card gate-card">
+              <div class="profile-avatar" id="profile-avatar">?</div>
+              <h3 id="profile-name">Player</h3>
+              <p id="profile-handle" class="profile-handle">@guest</p>
+              <div class="profile-xp">
+                <div class="profile-xp-label"><span>XP</span><b id="profile-xp">0</b></div>
+                <div class="profile-xp-track"><div id="profile-xp-fill"></div></div>
+              </div>
+              <ul class="profile-stats">
+                <li><b id="stat-wins">0</b><span>Wins</span></li>
+                <li><b id="stat-kills">0</b><span>Kills</span></li>
+                <li><b id="stat-matches">0</b><span>Matches</span></li>
+              </ul>
+            </aside>
+
+            <main class="gate-lobby-main gate-card">
+              <div class="lobby-toolbar">
+                <button type="button" id="lobby-refresh" class="gate-link-btn">Refresh</button>
+                <button type="button" id="lobby-create-open" class="wood-btn wood-btn-sm"><span>Create lobby</span></button>
+              </div>
+              <p id="lobby-list-error" class="gate-error hidden"></p>
+              <ul id="lobby-list" class="lobby-list" aria-live="polite"></ul>
+              <p id="lobby-list-empty" class="lobby-empty hidden">No open lobbies — start one!</p>
+            </main>
+          </div>
+        </section>
+
+        <!-- ——— Create lobby modal ——— -->
+        <dialog id="gate-create-dialog" class="gate-dialog gate-dialog-wide">
+          <form id="gate-create-form" method="dialog" class="gate-card gate-create-form">
+            <h2 class="gate-title gate-title-sm">Host a lobby</h2>
+            <p class="gate-sub gate-sub-tight">Pick an arena, then tweak room settings.</p>
+
+            <fieldset class="gate-picker">
+              <legend>Map</legend>
+              <div id="create-map-picker" class="gate-picker-grid" role="listbox" aria-label="Map"></div>
+              <input type="hidden" id="create-map" required />
+            </fieldset>
+
+            <fieldset class="gate-picker">
+              <legend>Mode</legend>
+              <div id="create-mode-picker" class="gate-picker-grid gate-picker-grid-modes" role="listbox" aria-label="Game mode"></div>
+              <input type="hidden" id="create-mode" required />
+            </fieldset>
+
+            <label class="gate-field">
+              <span>Lobby name</span>
+              <input id="create-name" type="text" maxlength="40" placeholder="Friday night frags" required />
+            </label>
+
+            <div class="gate-create-row">
+              <label class="gate-field">
+                <span>Max players</span>
+                <input id="create-max" type="number" min="2" max="12" value="8" required />
+              </label>
+              <label class="gate-field">
+                <span>Password <em class="gate-optional">(optional)</em></span>
+                <input id="create-password" type="password" maxlength="32" placeholder="Friends only…" autocomplete="new-password" />
+              </label>
+            </div>
+
+            <label class="gate-field gate-check">
+              <input id="create-public" type="checkbox" checked />
+              <span>List publicly</span>
+            </label>
+
+            <p id="create-error" class="gate-error hidden"></p>
+            <div class="gate-dialog-actions">
+              <button type="button" id="create-cancel" class="wood-btn wood-btn-sm wood-btn-ghost"><span>Cancel</span></button>
+              <button type="submit" class="wood-btn wood-btn-sm"><span>Host</span></button>
+            </div>
+          </form>
+        </dialog>
+
+        <!-- ——— Password prompt ——— -->
+        <dialog id="gate-password-dialog" class="gate-dialog">
+          <form id="gate-password-form" method="dialog" class="gate-card">
+            <h2 class="gate-title gate-title-sm">Private lobby</h2>
+            <p class="gate-sub">This room needs a password.</p>
+            <label class="gate-field">
+              <span>Password</span>
+              <input id="join-password" type="password" maxlength="32" required />
+            </label>
+            <p id="join-password-error" class="gate-error hidden"></p>
+            <div class="gate-dialog-actions">
+              <button type="button" id="join-password-cancel" class="wood-btn wood-btn-sm wood-btn-ghost"><span>Cancel</span></button>
+              <button type="submit" class="wood-btn wood-btn-sm"><span>Join</span></button>
+            </div>
+          </form>
+        </dialog>
+
+        <!-- ——— Settings / credits (legacy) ——— -->
+        <div class="menu-shell menu-shell-mini hidden" id="menu-legacy-shell">
+          <div id="menu-settings" class="menu-panel menu-modal hidden"></div>
+        </div>
+      </div>
+
+      <nav class="gate-footer">
+        <button type="button" id="menu-settings-btn" class="gate-link-btn">Options</button>
+        <button type="button" id="menu-credits-btn" class="gate-link-btn">Credits</button>
+      </nav>
+
+      <div id="menu-settings-panel" class="gate-settings-overlay hidden">
+        <div class="gate-card gate-settings-card">
+          <h2 class="gate-title gate-title-sm">Options</h2>
           <label class="menu-setting">
             <span>Mouse sens</span>
             <div class="menu-setting-row">
@@ -67,21 +213,19 @@
               <b id="menu-setting-fullscreen-val">Off</b>
             </div>
           </label>
-          <button type="button" id="menu-settings-back" class="wood-btn wood-btn-sm">
-            <span>Back</span>
-          </button>
+          <button type="button" id="menu-settings-back" class="wood-btn wood-btn-sm"><span>Back</span></button>
         </div>
+      </div>
 
-        <div id="menu-credits" class="menu-panel menu-modal hidden">
-          <h2 class="menu-modal-title">Credits</h2>
+      <div id="menu-credits-panel" class="gate-settings-overlay hidden">
+        <div class="gate-card gate-settings-card">
+          <h2 class="gate-title gate-title-sm">Credits</h2>
           <p class="menu-credits-body">
-            Cursor FPS<br />
-            Gun Game arena<br />
+            Cursor FPS · Gun Game<br />
+            Accounts &amp; custom lobbies<br />
             Built with Three.js
           </p>
-          <button type="button" id="menu-credits-back" class="wood-btn wood-btn-sm">
-            <span>Back</span>
-          </button>
+          <button type="button" id="menu-credits-back" class="wood-btn wood-btn-sm"><span>Back</span></button>
         </div>
       </div>
     </div>
@@ -189,7 +333,7 @@
         <div id="hud-hp-panel" class="hud-chip">
           <div class="hp-top">
             <span class="hp-label">Health</span>
-            <span id="hud-hp">200</span>
+            <span id="hud-hp">100</span>
           </div>
           <div class="hp-track"><div id="hud-hp-fill"></div></div>
         </div>
@@ -249,6 +393,7 @@
                 <th class="col-rank">#</th>
                 <th class="col-player">Player</th>
                 <th class="col-gun">Gun</th>
+                <th class="col-stat" id="scoreboard-score-h">Score</th>
                 <th class="col-stat">K</th>
                 <th class="col-stat">D</th>
               </tr>
@@ -260,6 +405,19 @@
 
       <div id="debug"></div>
     </div>
+
+    <div id="loadout-overlay" class="hidden" aria-hidden="true">
+      <div class="loadout-card">
+        <p class="loadout-kicker">Loadout</p>
+        <h2 id="loadout-title" class="loadout-title">Pick your weapon</h2>
+        <p id="loadout-sub" class="loadout-sub">Choose carefully — this is your gun for the match.</p>
+        <div id="loadout-grid" class="loadout-grid" role="listbox"></div>
+        <button type="button" id="loadout-confirm" class="wood-btn wood-btn-sm" disabled>
+          <span>Confirm &amp; fight</span>
+        </button>
+      </div>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

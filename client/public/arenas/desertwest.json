@@ -1,0 +1,826 @@
+{
+  "version": 1,
+  "name": "Dustwater Gulch",
+  "theme": "desert",
+  "arenaW": 72,
+  "arenaD": 96,
+  "wallH": 9,
+  "wallT": 1.4,
+  "props": [
+    {
+      "model": "cube.01",
+      "x": -18,
+      "y": -0.05,
+      "z": 35.65,
+      "yaw": 1.5707963267948966,
+      "scale": 4,
+      "solid": true,
+      "collider": {
+        "sx": 4,
+        "sy": 2.4,
+        "sz": 4
+      }
+    },
+    {
+      "model": "stone.02",
+      "x": 18,
+      "y": -0.05,
+      "z": -22.36,
+      "yaw": 0,
+      "scale": 2.4,
+      "solid": false
+    },
+    {
+      "model": "stone.02",
+      "x": 24,
+      "y": -0.05,
+      "z": -21.32,
+      "yaw": 0,
+      "scale": 2.4,
+      "solid": false
+    },
+    {
+      "model": "stone.02",
+      "x": -20,
+      "y": -0.05,
+      "z": 10,
+      "yaw": 0,
+      "scale": 2.4,
+      "solid": false
+    },
+    {
+      "model": "stone.02",
+      "x": -12,
+      "y": -0.05,
+      "z": 2,
+      "yaw": 0,
+      "scale": 2.4,
+      "solid": false
+    },
+    {
+      "model": "stone.02",
+      "x": -22,
+      "y": -0.05,
+      "z": 26,
+      "yaw": 0,
+      "scale": 2.4,
+      "solid": false
+    },
+    {
+      "model": "cube.05",
+      "x": 24,
+      "y": -0.05,
+      "z": 39.63,
+      "yaw": 0,
+      "scale": 3.2,
+      "solid": true,
+      "collider": {
+        "sx": 3.2,
+        "sy": 3.8,
+        "sz": 3.2
+      }
+    },
+    {
+      "model": "cube.07",
+      "x": 16,
+      "y": -0.05,
+      "z": 4,
+      "yaw": 1.5707963267948966,
+      "scale": 2.9432349941169376,
+      "solid": true,
+      "collider": {
+        "sx": 2.8,
+        "sy": 5.4,
+        "sz": 2.8
+      }
+    },
+    {
+      "model": "stone.03",
+      "x": 24,
+      "y": -0.05,
+      "z": -36.89,
+      "yaw": 0,
+      "scale": 4.17923023175972,
+      "solid": false
+    },
+    {
+      "model": "cube.07",
+      "x": -22,
+      "y": -0.05,
+      "z": 37.93,
+      "yaw": 1.5707963267948966,
+      "scale": 3.45282015450648,
+      "solid": true,
+      "collider": {
+        "sx": 2.8,
+        "sy": 5.4,
+        "sz": 2.8
+      }
+    },
+    {
+      "model": "stone.03",
+      "x": -18,
+      "y": -0.05,
+      "z": -6,
+      "yaw": 0,
+      "scale": 4.312254580514855,
+      "solid": false
+    },
+    {
+      "model": "stone.03",
+      "x": -12,
+      "y": -0.05,
+      "z": 21.73,
+      "yaw": 0,
+      "scale": 3.721034736814909,
+      "solid": false
+    },
+    {
+      "model": "cube.07",
+      "x": 16,
+      "y": -0.05,
+      "z": -39.76,
+      "yaw": 0,
+      "scale": 3.1473564912099388,
+      "solid": true,
+      "collider": {
+        "sx": 2.8,
+        "sy": 5.4,
+        "sz": 2.8
+      }
+    },
+    {
+      "model": "cube.07",
+      "x": 32,
+      "y": -0.05,
+      "z": -18.79,
+      "yaw": 0,
+      "scale": 3.3153490008611697,
+      "solid": true,
+      "collider": {
+        "sx": 2.8,
+        "sy": 5.4,
+        "sz": 2.8
+      }
+    },
+    {
+      "model": "cube.05",
+      "x": 30,
+      "y": -0.05,
+      "z": -8,
+      "yaw": 0,
+      "scale": 3.2,
+      "solid": true,
+      "collider": {
+        "sx": 3.2,
+        "sy": 3.8,
+        "sz": 3.2
+      }
+    },
+    {
+      "model": "cube.05",
+      "x": -26,
+      "y": -0.05,
+      "z": -10,
+      "yaw": 0,
+      "scale": 3.2,
+      "solid": true,
+      "collider": {
+        "sx": 3.2,
+        "sy": 3.8,
+        "sz": 3.2
+      }
+    },
+    {
+      "model": "stone.03",
+      "x": -28,
+      "y": -0.05,
+      "z": 22,
+      "yaw": 0,
+      "scale": 3.993051716176706,
+      "solid": false
+    },
+    {
+      "model": "cube.07",
+      "x": -14,
+      "y": -0.05,
+      "z": -40.14,
+      "yaw": 1.5707963267948966,
+      "scale": 3.3287011441178036,
+      "solid": true,
+      "collider": {
+        "sx": 2.8,
+        "sy": 5.4,
+        "sz": 2.8
+      }
+    },
+    {
+      "model": "cube.01",
+      "x": -14,
+      "y": -0.05,
+      "z": 18,
+      "yaw": 1.5707963267948966,
+      "scale": 4,
+      "solid": true,
+      "collider": {
+        "sx": 4,
+        "sy": 2.4,
+        "sz": 4
+      }
+    },
+    {
+      "model": "cube.01",
+      "x": -14,
+      "y": -0.05,
+      "z": -20.72,
+      "yaw": 0,
+      "scale": 4,
+      "solid": true,
+      "collider": {
+        "sx": 4,
+        "sy": 2.4,
+        "sz": 4
+      }
+    },
+    {
+      "model": "cube.01",
+      "x": 18,
+      "y": -0.05,
+      "z": -27.95,
+      "yaw": 0,
+      "scale": 4,
+      "solid": true,
+      "collider": {
+        "sx": 4,
+        "sy": 2.4,
+        "sz": 4
+      }
+    },
+    {
+      "model": "cube.01",
+      "x": 26,
+      "y": -0.05,
+      "z": 8,
+      "yaw": 0,
+      "scale": 4,
+      "solid": true,
+      "collider": {
+        "sx": 4,
+        "sy": 2.4,
+        "sz": 4
+      }
+    },
+    {
+      "model": "cube.01",
+      "x": 12,
+      "y": -0.05,
+      "z": 34.93,
+      "yaw": 1.5707963267948966,
+      "scale": 4,
+      "solid": true,
+      "collider": {
+        "sx": 4,
+        "sy": 2.4,
+        "sz": 4
+      }
+    },
+    {
+      "model": "cube.02",
+      "x": -24,
+      "y": -0.05,
+      "z": 2,
+      "yaw": 1.5707963267948966,
+      "scale": 4,
+      "solid": true,
+      "collider": {
+        "sx": 8,
+        "sy": 2.4,
+        "sz": 4
+      }
+    },
+    {
+      "model": "cube.02",
+      "x": 16,
+      "y": -0.05,
+      "z": -22,
+      "yaw": 1.5707963267948966,
+      "scale": 4,
+      "solid": true,
+      "collider": {
+        "sx": 8,
+        "sy": 2.4,
+        "sz": 4
+      }
+    },
+    {
+      "model": "cube.01",
+      "x": -18,
+      "y": -0.05,
+      "z": 2,
+      "yaw": 0,
+      "scale": 4,
+      "solid": true,
+      "collider": {
+        "sx": 4,
+        "sy": 2.4,
+        "sz": 4
+      }
+    },
+    {
+      "model": "cube.01",
+      "x": -14,
+      "y": -0.05,
+      "z": -22.58,
+      "yaw": 1.5707963267948966,
+      "scale": 4,
+      "solid": true,
+      "collider": {
+        "sx": 4,
+        "sy": 2.4,
+        "sz": 4
+      }
+    },
+    {
+      "model": "cube.01",
+      "x": 14,
+      "y": -0.05,
+      "z": 38.15,
+      "yaw": 0,
+      "scale": 4,
+      "solid": true,
+      "collider": {
+        "sx": 4,
+        "sy": 2.4,
+        "sz": 4
+      }
+    },
+    {
+      "model": "cube.01",
+      "x": 18,
+      "y": -0.05,
+      "z": -40.44,
+      "yaw": 0,
+      "scale": 4,
+      "solid": true,
+      "collider": {
+        "sx": 4,
+        "sy": 2.4,
+        "sz": 4
+      }
+    },
+    {
+      "model": "cube.01",
+      "x": 26,
+      "y": -0.05,
+      "z": -4,
+      "yaw": 1.5707963267948966,
+      "scale": 4,
+      "solid": true,
+      "collider": {
+        "sx": 4,
+        "sy": 2.4,
+        "sz": 4
+      }
+    },
+    {
+      "model": "cube.01",
+      "x": 26,
+      "y": -0.05,
+      "z": 16,
+      "yaw": 0,
+      "scale": 4,
+      "solid": true,
+      "collider": {
+        "sx": 4,
+        "sy": 2.4,
+        "sz": 4
+      }
+    },
+    {
+      "model": "stone.02",
+      "x": -30,
+      "y": -0.05,
+      "z": 40.25,
+      "yaw": 0,
+      "scale": 2.6145641282870202,
+      "solid": false
+    },
+    {
+      "model": "stone.02",
+      "x": -12,
+      "y": -0.05,
+      "z": 33.7,
+      "yaw": 0,
+      "scale": 2.477323302696459,
+      "solid": false
+    },
+    {
+      "model": "stone.02",
+      "x": -16,
+      "y": -0.05,
+      "z": -20,
+      "yaw": 0,
+      "scale": 2.7474112907599193,
+      "solid": false
+    },
+    {
+      "model": "stone.02",
+      "x": 12,
+      "y": -0.05,
+      "z": -31.56,
+      "yaw": 0,
+      "scale": 2.3624656855128707,
+      "solid": false
+    },
+    {
+      "model": "stone.02",
+      "x": 30,
+      "y": -0.05,
+      "z": -38.51,
+      "yaw": 0,
+      "scale": 2.172344891363173,
+      "solid": false
+    },
+    {
+      "model": "stone.02",
+      "x": 30,
+      "y": -0.05,
+      "z": -19.07,
+      "yaw": 0,
+      "scale": 2.555771913350327,
+      "solid": false
+    },
+    {
+      "model": "stone.02",
+      "x": 16,
+      "y": -0.05,
+      "z": -10,
+      "yaw": 0,
+      "scale": 2.63677719617408,
+      "solid": false
+    },
+    {
+      "model": "stone.02",
+      "x": 18,
+      "y": -0.05,
+      "z": 31.82,
+      "yaw": 0,
+      "scale": 2.2265523759211647,
+      "solid": false
+    },
+    {
+      "model": "stone.02",
+      "x": 34,
+      "y": -0.05,
+      "z": 22,
+      "yaw": 0,
+      "scale": 2.4111212227318903,
+      "solid": false
+    },
+    {
+      "model": "stone.02",
+      "x": 10,
+      "y": -0.05,
+      "z": 2,
+      "yaw": 0,
+      "scale": 2.1140243998146615,
+      "solid": false
+    },
+    {
+      "model": "stone.02",
+      "x": -6,
+      "y": -0.05,
+      "z": 26,
+      "yaw": 0,
+      "scale": 2.0915080163395032,
+      "solid": false
+    },
+    {
+      "model": "stone.02",
+      "x": -30,
+      "y": -0.05,
+      "z": 26.41,
+      "yaw": 0,
+      "scale": 2.241759948802064,
+      "solid": false
+    },
+    {
+      "model": "stone.02",
+      "x": -32,
+      "y": -0.05,
+      "z": 10,
+      "yaw": 0,
+      "scale": 2.0927127647359156,
+      "solid": false
+    },
+    {
+      "model": "stone.02",
+      "x": -8,
+      "y": -0.05,
+      "z": 22.11,
+      "yaw": 0,
+      "scale": 2.649598754440558,
+      "solid": false
+    },
+    {
+      "model": "stone.03",
+      "x": -14,
+      "y": -0.05,
+      "z": 38.96,
+      "yaw": 0,
+      "scale": 2.8,
+      "solid": false
+    },
+    {
+      "model": "stone.03",
+      "x": 14,
+      "y": -0.05,
+      "z": 14,
+      "yaw": 0,
+      "scale": 2.8,
+      "solid": false
+    },
+    {
+      "model": "stone.03",
+      "x": -20,
+      "y": -0.05,
+      "z": 26.16,
+      "yaw": 0,
+      "scale": 2.8,
+      "solid": false
+    },
+    {
+      "model": "stone.03",
+      "x": 26,
+      "y": -0.05,
+      "z": 27.45,
+      "yaw": 0,
+      "scale": 2.8,
+      "solid": false
+    },
+    {
+      "model": "stone.03",
+      "x": 16,
+      "y": -0.05,
+      "z": -34.77,
+      "yaw": 0,
+      "scale": 2.8,
+      "solid": false
+    },
+    {
+      "model": "cube.02",
+      "x": -8,
+      "y": -0.05,
+      "z": 18,
+      "yaw": 0,
+      "scale": 4,
+      "solid": true,
+      "collider": {
+        "sx": 8,
+        "sy": 2.4,
+        "sz": 4
+      }
+    },
+    {
+      "model": "cube.02",
+      "x": 10,
+      "y": -0.05,
+      "z": -20,
+      "yaw": 1.5708,
+      "scale": 4,
+      "solid": true,
+      "collider": {
+        "sx": 4,
+        "sy": 2.4,
+        "sz": 8
+      }
+    },
+    {
+      "model": "cube.06",
+      "x": 0,
+      "y": -0.05,
+      "z": 8,
+      "yaw": 0,
+      "scale": 3.5,
+      "solid": true,
+      "collider": {
+        "sx": 7,
+        "sy": 4.2,
+        "sz": 3.5
+      }
+    },
+    {
+      "model": "stone.03",
+      "x": 6,
+      "y": -0.05,
+      "z": 40,
+      "yaw": 0.4,
+      "scale": 3.5,
+      "solid": false
+    },
+    {
+      "model": "stone.03",
+      "x": -22,
+      "y": -0.05,
+      "z": -8,
+      "yaw": 1.1,
+      "scale": 3.2,
+      "solid": false
+    },
+    {
+      "model": "cube.01",
+      "x": -20,
+      "y": -0.05,
+      "z": -40,
+      "yaw": 0,
+      "scale": 4,
+      "solid": true,
+      "collider": {
+        "sx": 4,
+        "sy": 2.4,
+        "sz": 4
+      }
+    },
+    {
+      "model": "cube.01",
+      "x": 22,
+      "y": -0.05,
+      "z": 42,
+      "yaw": 0,
+      "scale": 4,
+      "solid": true,
+      "collider": {
+        "sx": 4,
+        "sy": 2.4,
+        "sz": 4
+      }
+    },
+    {
+      "model": "cube.01",
+      "x": -18,
+      "y": 2.35,
+      "z": 2,
+      "yaw": 1.5707963267948966,
+      "scale": 4,
+      "solid": true,
+      "collider": {
+        "sx": 4,
+        "sy": 2.4,
+        "sz": 4
+      }
+    },
+    {
+      "model": "cube.01",
+      "x": -14,
+      "y": 2.35,
+      "z": -22.58,
+      "yaw": 1.5707963267948966,
+      "scale": 4,
+      "solid": true,
+      "collider": {
+        "sx": 4,
+        "sy": 2.4,
+        "sz": 4
+      }
+    },
+    {
+      "model": "cube.02",
+      "x": 4,
+      "y": -0.05,
+      "z": 30,
+      "yaw": 0,
+      "scale": 4,
+      "solid": true,
+      "collider": {
+        "sx": 8,
+        "sy": 2.4,
+        "sz": 4
+      }
+    },
+    {
+      "model": "stone.03",
+      "x": -4,
+      "y": -0.05,
+      "z": -2,
+      "yaw": 0.6,
+      "scale": 3.6,
+      "solid": false
+    },
+    {
+      "model": "cube.05",
+      "x": 4,
+      "y": -0.05,
+      "z": -32,
+      "yaw": 0,
+      "scale": 3.2,
+      "solid": true,
+      "collider": {
+        "sx": 3.2,
+        "sy": 3.8,
+        "sz": 3.2
+      }
+    },
+    {
+      "model": "stone.03",
+      "x": 0,
+      "y": -0.05,
+      "z": 14,
+      "yaw": 1.1,
+      "scale": 3.4,
+      "solid": false
+    },
+    {
+      "model": "stone.02",
+      "x": -6,
+      "y": -0.05,
+      "z": -28,
+      "yaw": 0.2,
+      "scale": 2.6,
+      "solid": false
+    }
+  ],
+  "spawns": [
+    {
+      "team": "T",
+      "position": {
+        "x": -28,
+        "y": 0.05,
+        "z": -36
+      },
+      "yaw": 3.141592653589793
+    },
+    {
+      "team": "T",
+      "position": {
+        "x": -32,
+        "y": 0.05,
+        "z": 6.07
+      },
+      "yaw": 3.141592653589793
+    },
+    {
+      "team": "T",
+      "position": {
+        "x": -30,
+        "y": 0.05,
+        "z": 38.28
+      },
+      "yaw": 3.141592653589793
+    },
+    {
+      "team": "T",
+      "position": {
+        "x": -26,
+        "y": 0.05,
+        "z": 18.14
+      },
+      "yaw": 3.141592653589793
+    },
+    {
+      "team": "T",
+      "position": {
+        "x": -24,
+        "y": 0.05,
+        "z": -11.9
+      },
+      "yaw": 3.141592653589793
+    },
+    {
+      "team": "CT",
+      "position": {
+        "x": 28,
+        "y": 0.05,
+        "z": -33.43
+      },
+      "yaw": 0
+    },
+    {
+      "team": "CT",
+      "position": {
+        "x": 32,
+        "y": 0.05,
+        "z": -8.72
+      },
+      "yaw": 0
+    },
+    {
+      "team": "CT",
+      "position": {
+        "x": 30,
+        "y": 0.05,
+        "z": 7.37
+      },
+      "yaw": 0
+    },
+    {
+      "team": "CT",
+      "position": {
+        "x": 28,
+        "y": 0.05,
+        "z": 39.59
+      },
+      "yaw": 0
+    }
+  ],
+  "boxes": []
+}

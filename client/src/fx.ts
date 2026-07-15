@@ -52,9 +52,9 @@ function matStd(
   });
 }
 
-/** Scale meme guns up so silhouettes read in first person. */
+/** Compact FPS-style framing — never dominates the viewport. */
 function finishVm(root: THREE.Group): THREE.Group {
-  if (root.userData.meme) root.scale.setScalar(1.08);
+  if (root.userData.meme) root.scale.setScalar(0.95);
   return root;
 }
 
@@ -69,16 +69,17 @@ function buildBlockyArm(root: THREE.Group, hx: number, hy: number, hz: number): 
     roughness: 0.78,
     metalness: 0.08,
   });
-  const hand = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.085, 0.1), skin);
-  hand.position.set(hx + 0.01, hy - 0.09, hz + 0.05);
+  // Smaller arm so it doesn't fight the gun for FOV
+  const hand = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.06, 0.07), skin);
+  hand.position.set(hx + 0.01, hy - 0.07, hz + 0.04);
   root.add(hand);
-  const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.075, 0.24), sleeve);
-  forearm.position.set(hx + 0.05, hy - 0.15, hz + 0.18);
+  const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.055, 0.18), sleeve);
+  forearm.position.set(hx + 0.04, hy - 0.12, hz + 0.14);
   forearm.rotation.x = 0.4;
   forearm.rotation.y = -0.28;
   root.add(forearm);
-  const upper = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.095, 0.2), sleeve);
-  upper.position.set(hx + 0.11, hy - 0.28, hz + 0.32);
+  const upper = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.07, 0.14), sleeve);
+  upper.position.set(hx + 0.08, hy - 0.2, hz + 0.24);
   upper.rotation.x = 0.65;
   upper.rotation.y = -0.12;
   root.add(upper);
@@ -120,87 +121,255 @@ function buildViewmodel(weapon: WeaponDef): THREE.Group {
     return m;
   };
 
-  const hx = 0.22;
-  const hy = -0.2;
-  const hz = -0.5;
+  const hx = 0.24;
+  const hy = -0.22;
+  const hz = -0.45;
   buildBlockyArm(root, hx, hy, hz);
   root.userData.animProfile = resolveAnimProfile(weapon);
   root.userData.idle = weapon.id;
   root.userData.meme = weapon.id.startsWith("gg_");
-  // Subtle per-meme rest pose (keep on-screen; mostly yaw/roll accents)
+  // Mild hip offset — readable guns, clear crosshair
   const restById: Record<string, { x: number; y: number; z: number; rx: number; ry: number; rz: number }> = {
-    gg_pea: { x: 0.01, y: 0.01, z: 0.02, rx: 0.03, ry: -0.04, rz: 0.04 },
-    gg_chicken: { x: 0, y: 0.02, z: 0, rx: -0.05, ry: 0.06, rz: -0.06 },
-    gg_potato: { x: 0.02, y: -0.01, z: -0.02, rx: 0.08, ry: 0, rz: 0.02 },
-    gg_confetti: { x: 0.01, y: 0.02, z: 0.01, rx: 0, ry: -0.06, rz: 0.05 },
-    gg_bees: { x: 0, y: 0, z: -0.01, rx: 0.04, ry: 0.03, rz: 0 },
-    gg_noodle: { x: 0.02, y: 0.02, z: 0, rx: -0.06, ry: 0.05, rz: -0.04 },
-    gg_slap: { x: 0.03, y: 0.02, z: 0.03, rx: 0.08, ry: -0.1, rz: 0.08 },
-    gg_bubble: { x: 0, y: 0.03, z: 0.01, rx: 0.02, ry: 0, rz: -0.04 },
-    gg_disco: { x: -0.01, y: 0.02, z: 0, rx: 0, ry: 0.08, rz: 0.06 },
-    gg_spoon: { x: 0.01, y: -0.02, z: -0.02, rx: 0.06, ry: 0, rz: 0 },
-    gg_soaker: { x: 0.01, y: 0, z: 0.01, rx: -0.04, ry: -0.03, rz: 0.03 },
-    gg_accordion: { x: -0.02, y: 0, z: 0, rx: 0.04, ry: 0.06, rz: -0.05 },
-    gg_shrink: { x: 0.02, y: 0.01, z: 0.02, rx: 0, ry: -0.05, rz: 0 },
-    gg_thunder: { x: 0, y: 0.01, z: 0, rx: 0.06, ry: 0.04, rz: 0.06 },
-    gg_flappy: { x: 0, y: 0.02, z: 0.01, rx: -0.06, ry: 0.08, rz: 0 },
-    gg_hammer: { x: 0.02, y: -0.02, z: -0.02, rx: -0.1, ry: 0.05, rz: -0.08 },
-    gg_pointer: { x: 0.02, y: 0.02, z: 0.02, rx: 0.02, ry: 0, rz: 0 },
-    gg_banana_peel: { x: 0.01, y: 0.01, z: 0.01, rx: 0.04, ry: -0.08, rz: 0.04 },
-    gg_ban: { x: 0.03, y: -0.02, z: -0.02, rx: -0.1, ry: 0.06, rz: -0.1 },
-    gg_golden: { x: 0, y: 0.03, z: 0.02, rx: 0.05, ry: 0.04, rz: 0.04 },
+    gg_pea: { x: 0.02, y: -0.02, z: 0.02, rx: 0.04, ry: -0.04, rz: 0.03 },
+    gg_chicken: { x: 0.02, y: -0.01, z: 0.02, rx: 0.02, ry: 0.04, rz: -0.04 },
+    gg_potato: { x: 0.03, y: -0.02, z: 0.01, rx: 0.05, ry: 0, rz: 0.02 },
+    gg_confetti: { x: 0.02, y: -0.01, z: 0.02, rx: 0.02, ry: -0.04, rz: 0.03 },
+    gg_bees: { x: 0.02, y: -0.02, z: 0.01, rx: 0.03, ry: 0.02, rz: 0 },
+    gg_noodle: { x: 0.02, y: -0.01, z: 0.02, rx: 0, ry: 0.03, rz: -0.02 },
+    gg_slap: { x: 0.03, y: 0, z: 0.04, rx: 0.05, ry: -0.06, rz: 0.05 },
+    gg_bubble: { x: 0.02, y: -0.01, z: 0.02, rx: 0.02, ry: 0, rz: -0.02 },
+    gg_disco: { x: 0.02, y: -0.02, z: 0.01, rx: 0.02, ry: 0.04, rz: 0.03 },
+    gg_spoon: { x: 0.02, y: -0.02, z: 0.01, rx: 0.04, ry: 0, rz: 0 },
+    gg_soaker: { x: 0.02, y: -0.02, z: 0.02, rx: 0, ry: -0.02, rz: 0.02 },
+    gg_accordion: { x: 0.02, y: -0.02, z: 0.01, rx: 0.03, ry: 0.03, rz: -0.03 },
+    gg_shrink: { x: 0.02, y: -0.01, z: 0.02, rx: 0.02, ry: -0.03, rz: 0 },
+    gg_thunder: { x: 0.02, y: -0.02, z: 0.02, rx: 0.04, ry: 0.02, rz: 0.03 },
+    gg_flappy: { x: 0.02, y: -0.01, z: 0.02, rx: 0, ry: 0.04, rz: 0 },
+    gg_hammer: { x: 0.03, y: -0.02, z: 0.01, rx: -0.05, ry: 0.03, rz: -0.04 },
+    gg_pointer: { x: 0.02, y: -0.01, z: 0.02, rx: 0.02, ry: 0, rz: 0 },
+    gg_banana_peel: { x: 0.02, y: -0.02, z: 0.02, rx: 0.03, ry: -0.04, rz: 0.02 },
+    gg_ban: { x: 0.03, y: -0.02, z: 0.01, rx: -0.05, ry: 0.04, rz: -0.05 },
+    gg_golden: { x: 0.02, y: -0.01, z: 0.02, rx: 0.03, ry: 0.02, rz: 0.02 },
   };
-  root.userData.rest = restById[weapon.id] ?? { x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0 };
+  root.userData.rest = restById[weapon.id] ?? { x: 0.02, y: -0.02, z: 0.02, rx: 0.02, ry: 0, rz: 0 };
 
-  // Rich procedural meme meshes (GLB guns never hit this path when loaded)
+  // Weird but gun-shaped — grip + receiver + barrel, themed accents
+  const grip = () =>
+    add(new THREE.BoxGeometry(0.05, 0.11, 0.07), gunMat, hx, hy - 0.06, -0.38);
+  const stock = () =>
+    add(new THREE.BoxGeometry(0.045, 0.06, 0.12), accentMat, hx, hy - 0.02, -0.28);
+
   switch (weapon.id) {
     case "gg_slap": {
-      add(new THREE.BoxGeometry(0.2, 0.3, 0.11), gunMat, 0.32, -0.08, -0.68);
-      add(new THREE.BoxGeometry(0.07, 0.18, 0.07), accentMat, 0.22, 0.06, -0.68);
-      add(new THREE.BoxGeometry(0.07, 0.2, 0.07), accentMat, 0.3, 0.08, -0.68);
-      add(new THREE.BoxGeometry(0.07, 0.19, 0.07), accentMat, 0.38, 0.07, -0.68);
-      add(new THREE.BoxGeometry(0.07, 0.16, 0.07), accentMat, 0.46, 0.02, -0.68);
-      add(new THREE.BoxGeometry(0.07, 0.14, 0.07), gunMat, 0.53, -0.04, -0.66);
-      add(new THREE.BoxGeometry(0.09, 0.11, 0.08), gunMat, 0.16, -0.22, -0.66);
-      add(new THREE.SphereGeometry(0.045, 8, 8), glowMat, 0.32, -0.24, -0.58);
+      add(new THREE.BoxGeometry(0.14, 0.2, 0.06), gunMat, 0.3, hy + 0.05, -0.62);
+      add(new THREE.BoxGeometry(0.045, 0.12, 0.04), accentMat, 0.23, hy + 0.12, -0.62);
+      add(new THREE.BoxGeometry(0.045, 0.14, 0.04), accentMat, 0.29, hy + 0.13, -0.62);
+      add(new THREE.BoxGeometry(0.045, 0.13, 0.04), accentMat, 0.35, hy + 0.12, -0.62);
+      add(new THREE.BoxGeometry(0.045, 0.11, 0.04), accentMat, 0.41, hy + 0.08, -0.62);
+      add(new THREE.BoxGeometry(0.05, 0.07, 0.05), gunMat, 0.18, hy - 0.04, -0.56);
+      add(new THREE.SphereGeometry(0.025, 6, 6), glowMat, 0.3, hy - 0.08, -0.55);
       root.userData.melee = true;
       return finishVm(root);
     }
     case "gg_hammer": {
       const haft = add(
-        new THREE.CylinderGeometry(0.05, 0.06, 1.1, 10),
+        new THREE.CylinderGeometry(0.03, 0.035, 0.72, 8),
         gunMat,
-        0.2,
-        -0.08,
-        -0.92,
+        hx,
+        hy,
+        -0.78,
         Math.PI / 2,
         0,
         0,
       );
       root.userData.animParts = { haft };
-      add(new THREE.BoxGeometry(0.42, 0.32, 0.46), accentMat, 0.2, -0.06, -1.42);
-      add(new THREE.BoxGeometry(0.46, 0.1, 0.22), glowMat, 0.2, 0.1, -1.42);
-      add(new THREE.CylinderGeometry(0.08, 0.1, 0.14, 8), gunMat, 0.2, -0.08, -0.38, Math.PI / 2, 0, 0);
+      add(new THREE.BoxGeometry(0.22, 0.16, 0.26), accentMat, hx, hy, -1.12);
+      add(new THREE.BoxGeometry(0.26, 0.05, 0.12), glowMat, hx, hy + 0.09, -1.12);
+      add(new THREE.CylinderGeometry(0.045, 0.05, 0.08, 8), gunMat, hx, hy, -0.4, Math.PI / 2, 0, 0);
       root.userData.melee = true;
       return finishVm(root);
     }
     case "gg_ban": {
-      add(new THREE.CylinderGeometry(0.04, 0.05, 0.9, 10), gunMat, 0.2, -0.1, -0.86, Math.PI / 2, 0, 0);
-      add(new THREE.BoxGeometry(0.46, 0.22, 0.3), accentMat, 0.2, -0.06, -1.28);
-      add(new THREE.BoxGeometry(0.24, 0.08, 0.32), gunMat, 0.2, 0.08, -1.28);
-      add(new THREE.BoxGeometry(0.18, 0.18, 0.06), glowMat, 0.2, -0.06, -1.46);
-      add(new THREE.BoxGeometry(0.12, 0.025, 0.025), gunMat, 0.2, -0.06, -1.5, 0, 0, 0.7);
-      add(new THREE.BoxGeometry(0.12, 0.025, 0.025), gunMat, 0.2, -0.06, -1.5, 0, 0, -0.7);
+      add(new THREE.CylinderGeometry(0.028, 0.032, 0.62, 8), gunMat, hx, hy, -0.74, Math.PI / 2, 0, 0);
+      add(new THREE.BoxGeometry(0.26, 0.12, 0.16), accentMat, hx, hy, -1.06);
+      add(new THREE.BoxGeometry(0.14, 0.04, 0.18), gunMat, hx, hy + 0.07, -1.06);
+      add(new THREE.BoxGeometry(0.09, 0.09, 0.04), glowMat, hx, hy, -1.16);
+      add(new THREE.BoxGeometry(0.06, 0.015, 0.015), gunMat, hx, hy, -1.2, 0, 0, 0.7);
+      add(new THREE.BoxGeometry(0.06, 0.015, 0.015), gunMat, hx, hy, -1.2, 0, 0, -0.7);
       root.userData.melee = true;
       return finishVm(root);
     }
     case "gg_pea": {
-      add(new THREE.SphereGeometry(0.13, 14, 14), gunMat, hx, hy, -0.54);
-      add(new THREE.SphereGeometry(0.06, 10, 10), accentMat, hx - 0.09, hy + 0.08, -0.48);
-      add(new THREE.SphereGeometry(0.055, 10, 10), accentMat, hx + 0.1, hy + 0.03, -0.5);
-      add(new THREE.SphereGeometry(0.04, 8, 8), accentMat, hx, hy - 0.08, -0.48);
+      // Pod SMG — real gun bones + pea accents
+      grip();
+      stock();
+      add(new THREE.BoxGeometry(0.09, 0.08, 0.28), gunMat, hx, hy + 0.02, -0.58);
+      add(new THREE.SphereGeometry(0.045, 10, 10), accentMat, hx - 0.04, hy + 0.06, -0.52);
+      add(new THREE.SphereGeometry(0.04, 10, 10), accentMat, hx + 0.045, hy + 0.05, -0.56);
+      add(new THREE.SphereGeometry(0.035, 8, 8), glowMat, hx, hy + 0.07, -0.66);
       const barrel = add(
-        new THREE.CylinderGeometry(0.05, 0.08, 0.4, 12),
+        new THREE.CylinderGeometry(0.028, 0.038, 0.28, 10),
+        accentMat,
+        hx,
+        hy + 0.03,
+        -0.88,
+        Math.PI / 2,
+        0,
+        0,
+      );
+      add(new THREE.SphereGeometry(0.022, 6, 6), glowMat, hx, hy + 0.03, -1.04);
+      add(new THREE.BoxGeometry(0.04, 0.03, 0.08), gunMat, hx, hy + 0.08, -0.48);
+      root.userData.animParts = { barrel };
+      return finishVm(root);
+    }
+    case "gg_chicken": {
+      grip();
+      add(new THREE.BoxGeometry(0.1, 0.09, 0.22), gunMat, hx, hy + 0.02, -0.56);
+      add(new THREE.SphereGeometry(0.08, 12, 12), gunMat, hx, hy + 0.05, -0.5);
+      add(new THREE.SphereGeometry(0.05, 10, 10), gunMat, hx, hy + 0.1, -0.44);
+      add(new THREE.ConeGeometry(0.045, 0.2, 8), accentMat, hx, hy + 0.04, -0.82, Math.PI / 2, 0, 0);
+      add(new THREE.BoxGeometry(0.055, 0.1, 0.025), accentMat, hx - 0.08, hy + 0.12, -0.48, 0, 0, 0.35);
+      add(new THREE.BoxGeometry(0.055, 0.1, 0.025), accentMat, hx + 0.08, hy + 0.12, -0.48, 0, 0, -0.35);
+      add(new THREE.SphereGeometry(0.015, 5, 5), glowMat, hx + 0.025, hy + 0.12, -0.42);
+      add(new THREE.SphereGeometry(0.015, 5, 5), glowMat, hx - 0.025, hy + 0.12, -0.42);
+      add(new THREE.BoxGeometry(0.05, 0.04, 0.1), accentMat, hx, hy + 0.08, -0.62);
+      return finishVm(root);
+    }
+    case "gg_potato": {
+      // Cannon silhouette — fat tube, stock, potato chamber
+      grip();
+      stock();
+      add(new THREE.BoxGeometry(0.12, 0.1, 0.22), gunMat, hx, hy + 0.02, -0.54);
+      add(new THREE.CylinderGeometry(0.065, 0.078, 0.42, 12), accentMat, hx, hy + 0.03, -0.88, Math.PI / 2, 0, 0);
+      add(new THREE.TorusGeometry(0.075, 0.014, 6, 14), glowMat, hx, hy + 0.03, -0.64, Math.PI / 2, 0, 0);
+      add(new THREE.TorusGeometry(0.07, 0.012, 6, 12), glowMat, hx, hy + 0.03, -1.06, Math.PI / 2, 0, 0);
+      const potato = add(new THREE.SphereGeometry(0.05, 10, 10), gunMat, hx, hy + 0.03, -0.72);
+      potato.scale.set(1.3, 0.85, 0.95);
+      add(new THREE.BoxGeometry(0.05, 0.07, 0.06), accentMat, hx + 0.07, hy + 0.07, -0.48);
+      add(new THREE.BoxGeometry(0.08, 0.04, 0.12), gunMat, hx, hy + 0.09, -0.5);
+      root.userData.animParts = { potato };
+      return finishVm(root);
+    }
+    case "gg_noodle": {
+      grip();
+      stock();
+      add(new THREE.BoxGeometry(0.1, 0.085, 0.2), gunMat, hx, hy + 0.02, -0.54);
+      add(new THREE.TorusGeometry(0.06, 0.022, 6, 14), gunMat, hx, hy + 0.04, -0.62);
+      add(new THREE.TorusGeometry(0.045, 0.016, 5, 12), accentMat, hx + 0.02, hy + 0.06, -0.72);
+      add(new THREE.CylinderGeometry(0.035, 0.05, 0.36, 10), accentMat, hx, hy + 0.03, -0.94, Math.PI / 2, 0, 0);
+      add(new THREE.SphereGeometry(0.03, 8, 8), glowMat, hx, hy + 0.03, -1.14);
+      return finishVm(root);
+    }
+    case "gg_bubble": {
+      grip();
+      stock();
+      add(new THREE.BoxGeometry(0.09, 0.08, 0.18), gunMat, hx, hy + 0.02, -0.52);
+      add(new THREE.SphereGeometry(0.09, 14, 14), gunMat, hx, hy + 0.04, -0.6);
+      add(new THREE.SphereGeometry(0.04, 10, 10), accentMat, hx + 0.07, hy + 0.08, -0.66);
+      add(new THREE.SphereGeometry(0.03, 8, 8), glowMat, hx - 0.06, hy + 0.08, -0.54);
+      add(new THREE.CylinderGeometry(0.032, 0.045, 0.26, 10), accentMat, hx, hy + 0.03, -0.86, Math.PI / 2, 0, 0);
+      add(new THREE.TorusGeometry(0.045, 0.012, 6, 12), glowMat, hx, hy + 0.03, -1.0, Math.PI / 2, 0, 0);
+      return finishVm(root);
+    }
+    case "gg_spoon": {
+      grip();
+      stock();
+      const bolt = add(new THREE.BoxGeometry(0.035, 0.025, 0.18), glowMat, hx, hy + 0.06, -0.55);
+      root.userData.animParts = { bolt };
+      add(new THREE.BoxGeometry(0.07, 0.055, 0.52), gunMat, hx, hy + 0.02, -0.78);
+      add(new THREE.SphereGeometry(0.07, 12, 12), accentMat, hx, hy + 0.03, -1.12);
+      add(new THREE.SphereGeometry(0.045, 10, 10), accentMat, hx, hy + 0.03, -1.2);
+      add(new THREE.CylinderGeometry(0.022, 0.022, 0.08, 6), glowMat, hx, hy + 0.08, -0.5, Math.PI / 2, 0, 0);
+      add(new THREE.BoxGeometry(0.05, 0.04, 0.1), gunMat, hx, hy + 0.08, -0.62);
+      return finishVm(root);
+    }
+    case "gg_soaker": {
+      grip();
+      stock();
+      add(new THREE.BoxGeometry(0.11, 0.12, 0.36), gunMat, hx, hy + 0.02, -0.62);
+      add(new THREE.BoxGeometry(0.13, 0.14, 0.14), accentMat, hx, hy - 0.02, -0.42);
+      const nozzle = add(
+        new THREE.CylinderGeometry(0.035, 0.028, 0.38, 10),
+        glowMat,
+        hx,
+        hy + 0.05,
+        -0.98,
+        Math.PI / 2,
+        0,
+        0,
+      );
+      add(new THREE.BoxGeometry(0.06, 0.07, 0.08), accentMat, hx, hy + 0.1, -0.55);
+      add(new THREE.SphereGeometry(0.025, 6, 6), glowMat, hx, hy + 0.05, -1.18);
+      root.userData.animParts = { nozzle };
+      return finishVm(root);
+    }
+    case "gg_shrink": {
+      grip();
+      add(new THREE.BoxGeometry(0.08, 0.09, 0.22), gunMat, hx, hy + 0.02, -0.54);
+      const cone = add(new THREE.ConeGeometry(0.07, 0.28, 12), glowMat, hx, hy + 0.02, -0.88, Math.PI / 2, 0, 0);
+      add(new THREE.TorusGeometry(0.05, 0.012, 6, 14), accentMat, hx, hy + 0.02, -1.02, Math.PI / 2, 0, 0);
+      add(new THREE.TorusGeometry(0.032, 0.008, 6, 12), glowMat, hx, hy + 0.02, -1.1, Math.PI / 2, 0, 0);
+      add(new THREE.SphereGeometry(0.02, 6, 6), glowMat, hx, hy + 0.02, -1.16);
+      add(new THREE.BoxGeometry(0.05, 0.04, 0.06), accentMat, hx, hy + 0.08, -0.45);
+      root.userData.animParts = { cone };
+      return finishVm(root);
+    }
+    case "gg_thunder": {
+      grip();
+      stock();
+      add(new THREE.BoxGeometry(0.09, 0.1, 0.22), gunMat, hx, hy + 0.02, -0.54);
+      add(new THREE.BoxGeometry(0.04, 0.16, 0.04), glowMat, hx, hy + 0.08, -0.72, 0, 0, 0.45);
+      add(new THREE.BoxGeometry(0.04, 0.14, 0.04), glowMat, hx + 0.04, hy, -0.86, 0, 0, -0.5);
+      add(new THREE.BoxGeometry(0.032, 0.1, 0.032), accentMat, hx - 0.035, hy + 0.04, -0.96, 0, 0, 0.25);
+      add(new THREE.BoxGeometry(0.03, 0.08, 0.03), glowMat, hx + 0.015, hy + 0.06, -1.06, 0, 0, -0.3);
+      add(new THREE.SphereGeometry(0.028, 8, 8), glowMat, hx, hy + 0.02, -1.12);
+      return finishVm(root);
+    }
+    case "gg_pointer": {
+      grip();
+      add(new THREE.BoxGeometry(0.06, 0.07, 0.26), gunMat, hx, hy + 0.01, -0.58);
+      add(new THREE.CylinderGeometry(0.014, 0.014, 0.42, 8), glowMat, hx, hy + 0.02, -0.96, Math.PI / 2, 0, 0);
+      add(new THREE.SphereGeometry(0.025, 8, 8), glowMat, hx, hy + 0.02, -1.2);
+      add(new THREE.ConeGeometry(0.03, 0.06, 6), accentMat, hx, hy + 0.02, -1.26, Math.PI / 2, 0, 0);
+      add(new THREE.BoxGeometry(0.06, 0.035, 0.06), accentMat, hx, hy + 0.06, -0.45);
+      add(new THREE.BoxGeometry(0.04, 0.03, 0.08), gunMat, hx, hy + 0.07, -0.62);
+      return finishVm(root);
+    }
+    case "gg_golden": {
+      const glow = matStd(0xffe566, {
+        metalness: 0.85,
+        roughness: 0.18,
+        emissive: 0xffd700,
+        emissiveIntensity: 1.0,
+      });
+      grip();
+      add(new THREE.BoxGeometry(0.08, 0.08, 0.18), gunMat, hx, hy + 0.02, -0.52);
+      add(new THREE.SphereGeometry(0.085, 14, 14), glow, hx, hy + 0.04, -0.58);
+      add(new THREE.CylinderGeometry(0.025, 0.04, 0.22, 8), accentMat, hx, hy + 0.08, -0.8, 0.45, 0, 0);
+      add(new THREE.TorusGeometry(0.06, 0.014, 6, 14), glow, hx, hy + 0.04, -0.52, 0.35, 0, 0);
+      add(new THREE.BoxGeometry(0.04, 0.04, 0.04), glow, hx + 0.07, hy + 0.08, -0.55);
+      return finishVm(root);
+    }
+    case "gg_banana_peel": {
+      grip();
+      stock();
+      add(new THREE.BoxGeometry(0.1, 0.09, 0.28), gunMat, hx, hy + 0.02, -0.6);
+      add(new THREE.BoxGeometry(0.055, 0.045, 0.22), accentMat, hx, hy + 0.07, -0.88);
+      add(new THREE.SphereGeometry(0.055, 10, 10), accentMat, hx, hy + 0.01, -1.04);
+      add(new THREE.BoxGeometry(0.035, 0.08, 0.035), gunMat, hx - 0.06, hy + 0.05, -0.72, 0, 0, 0.4);
+      add(new THREE.BoxGeometry(0.035, 0.08, 0.035), gunMat, hx + 0.06, hy + 0.05, -0.72, 0, 0, -0.4);
+      add(new THREE.BoxGeometry(0.035, 0.07, 0.035), gunMat, hx, hy + 0.09, -0.78);
+      return finishVm(root);
+    }
+    case "gg_bees": {
+      grip();
+      stock();
+      add(new THREE.BoxGeometry(0.13, 0.12, 0.28), gunMat, hx, hy + 0.02, -0.58);
+      add(new THREE.BoxGeometry(0.14, 0.035, 0.14), accentMat, hx, hy + 0.09, -0.58);
+      add(new THREE.BoxGeometry(0.14, 0.035, 0.14), accentMat, hx, hy - 0.05, -0.58);
+      add(new THREE.BoxGeometry(0.14, 0.035, 0.08), accentMat, hx, hy + 0.02, -0.44);
+      const pump = add(
+        new THREE.CylinderGeometry(0.045, 0.055, 0.3, 10),
         accentMat,
         hx,
         hy + 0.02,
@@ -209,180 +378,54 @@ function buildViewmodel(weapon: WeaponDef): THREE.Group {
         0,
         0,
       );
-      add(new THREE.SphereGeometry(0.04, 8, 8), glowMat, hx, hy + 0.02, -1.12);
-      root.userData.animParts = { barrel };
-      return finishVm(root);
-    }
-    case "gg_chicken": {
-      add(new THREE.SphereGeometry(0.16, 14, 14), gunMat, hx, hy, -0.58);
-      add(new THREE.SphereGeometry(0.09, 12, 12), gunMat, hx, hy + 0.1, -0.48);
-      add(new THREE.ConeGeometry(0.07, 0.22, 8), accentMat, hx, hy + 0.05, -0.9, Math.PI / 2, 0, 0);
-      add(new THREE.BoxGeometry(0.07, 0.14, 0.04), accentMat, hx - 0.13, hy + 0.14, -0.52, 0, 0, 0.35);
-      add(new THREE.BoxGeometry(0.07, 0.14, 0.04), accentMat, hx + 0.13, hy + 0.14, -0.52, 0, 0, -0.35);
-      add(new THREE.BoxGeometry(0.04, 0.08, 0.16), gunMat, hx, hy - 0.12, -0.5);
-      add(new THREE.SphereGeometry(0.025, 6, 6), glowMat, hx + 0.05, hy + 0.12, -0.44);
-      add(new THREE.SphereGeometry(0.025, 6, 6), glowMat, hx - 0.05, hy + 0.12, -0.44);
-      return finishVm(root);
-    }
-    case "gg_potato": {
-      add(new THREE.CylinderGeometry(0.15, 0.18, 0.72, 14), accentMat, hx, hy, -0.92, Math.PI / 2, 0, 0);
-      add(new THREE.SphereGeometry(0.14, 12, 12), gunMat, hx, hy, -0.48);
-      add(new THREE.BoxGeometry(0.22, 0.2, 0.28), gunMat, hx, hy - 0.14, -0.32);
-      add(new THREE.TorusGeometry(0.13, 0.03, 6, 16), glowMat, hx, hy, -0.56, Math.PI / 2, 0, 0);
-      const potato = add(new THREE.SphereGeometry(0.09, 10, 10), gunMat, hx, hy, -0.74);
-      potato.scale.set(1.35, 0.85, 0.95);
-      add(new THREE.BoxGeometry(0.08, 0.12, 0.1), accentMat, hx + 0.1, hy + 0.08, -0.4);
-      root.userData.animParts = { potato };
-      return finishVm(root);
-    }
-    case "gg_noodle": {
-      add(new THREE.TorusGeometry(0.12, 0.05, 8, 18), gunMat, hx, hy, -0.5);
-      add(new THREE.TorusGeometry(0.09, 0.04, 6, 16), accentMat, hx + 0.03, hy + 0.05, -0.62);
-      add(new THREE.TorusGeometry(0.07, 0.03, 6, 14), gunMat, hx - 0.02, hy - 0.03, -0.72);
-      add(new THREE.CylinderGeometry(0.06, 0.1, 0.55, 10), accentMat, hx, hy, -0.95, Math.PI / 2, 0, 0);
-      add(new THREE.SphereGeometry(0.055, 8, 8), glowMat, hx, hy, -1.22);
-      return finishVm(root);
-    }
-    case "gg_bubble": {
-      add(new THREE.SphereGeometry(0.15, 16, 16), gunMat, hx, hy, -0.56);
-      add(new THREE.SphereGeometry(0.08, 12, 12), accentMat, hx + 0.11, hy + 0.09, -0.66);
-      add(new THREE.SphereGeometry(0.06, 10, 10), glowMat, hx - 0.08, hy + 0.1, -0.48);
-      add(new THREE.SphereGeometry(0.045, 8, 8), glowMat, hx + 0.02, hy - 0.1, -0.62);
-      add(new THREE.CylinderGeometry(0.05, 0.09, 0.34, 10), accentMat, hx, hy, -0.9, Math.PI / 2, 0, 0);
-      add(new THREE.TorusGeometry(0.08, 0.02, 6, 14), glowMat, hx, hy, -1.08, Math.PI / 2, 0, 0);
-      return finishVm(root);
-    }
-    case "gg_spoon": {
-      const bolt = add(new THREE.BoxGeometry(0.06, 0.04, 0.32), glowMat, hx, hy + 0.05, -0.58);
-      root.userData.animParts = { bolt };
-      add(new THREE.BoxGeometry(0.08, 0.05, 0.72), gunMat, hx, hy, -0.82);
-      add(new THREE.SphereGeometry(0.12, 12, 12), accentMat, hx, hy + 0.02, -1.22);
-      add(new THREE.SphereGeometry(0.08, 10, 10), accentMat, hx, hy + 0.02, -1.32);
-      add(new THREE.CylinderGeometry(0.045, 0.045, 0.12, 8), glowMat, hx, hy + 0.1, -0.5, Math.PI / 2, 0, 0);
-      add(new THREE.BoxGeometry(0.13, 0.1, 0.2), gunMat, hx, hy - 0.08, -0.34);
-      return finishVm(root);
-    }
-    case "gg_soaker": {
-      add(new THREE.BoxGeometry(0.15, 0.2, 0.55), gunMat, hx, hy, -0.58);
-      add(new THREE.BoxGeometry(0.18, 0.22, 0.2), accentMat, hx, hy - 0.1, -0.32);
-      const nozzle = add(
-        new THREE.CylinderGeometry(0.055, 0.045, 0.55, 12),
-        glowMat,
-        hx,
-        hy + 0.06,
-        -1.02,
-        Math.PI / 2,
-        0,
-        0,
-      );
-      add(new THREE.BoxGeometry(0.1, 0.12, 0.12), accentMat, hx, hy + 0.14, -0.48);
-      add(new THREE.SphereGeometry(0.04, 8, 8), glowMat, hx, hy + 0.06, -1.3);
-      root.userData.animParts = { nozzle };
-      return finishVm(root);
-    }
-    case "gg_shrink": {
-      add(new THREE.BoxGeometry(0.11, 0.13, 0.34), gunMat, hx, hy, -0.5);
-      const cone = add(new THREE.ConeGeometry(0.11, 0.36, 12), glowMat, hx, hy, -0.9, Math.PI / 2, 0, 0);
-      add(new THREE.TorusGeometry(0.08, 0.022, 8, 16), accentMat, hx, hy, -1.08, Math.PI / 2, 0, 0);
-      add(new THREE.TorusGeometry(0.05, 0.015, 8, 14), glowMat, hx, hy, -1.18, Math.PI / 2, 0, 0);
-      add(new THREE.SphereGeometry(0.04, 8, 8), glowMat, hx, hy, -1.26);
-      root.userData.animParts = { cone };
-      return finishVm(root);
-    }
-    case "gg_thunder": {
-      add(new THREE.BoxGeometry(0.12, 0.16, 0.32), gunMat, hx, hy, -0.48);
-      add(new THREE.BoxGeometry(0.06, 0.28, 0.06), glowMat, hx, hy + 0.12, -0.72, 0, 0, 0.45);
-      add(new THREE.BoxGeometry(0.06, 0.24, 0.06), glowMat, hx + 0.06, hy - 0.02, -0.86, 0, 0, -0.55);
-      add(new THREE.BoxGeometry(0.05, 0.16, 0.05), accentMat, hx - 0.05, hy + 0.05, -0.98, 0, 0, 0.25);
-      add(new THREE.BoxGeometry(0.05, 0.14, 0.05), glowMat, hx + 0.02, hy + 0.08, -1.08, 0, 0, -0.35);
-      add(new THREE.SphereGeometry(0.05, 8, 8), glowMat, hx, hy + 0.02, -1.12);
-      return finishVm(root);
-    }
-    case "gg_pointer": {
-      add(new THREE.BoxGeometry(0.08, 0.08, 0.36), gunMat, hx, hy, -0.5);
-      add(new THREE.CylinderGeometry(0.022, 0.022, 0.55, 8), glowMat, hx, hy, -0.95, Math.PI / 2, 0, 0);
-      add(new THREE.SphereGeometry(0.045, 8, 8), glowMat, hx, hy, -1.24);
-      add(new THREE.ConeGeometry(0.05, 0.1, 8), accentMat, hx, hy, -1.32, Math.PI / 2, 0, 0);
-      add(new THREE.BoxGeometry(0.1, 0.05, 0.1), accentMat, hx, hy + 0.06, -0.4);
-      return finishVm(root);
-    }
-    case "gg_golden": {
-      const glow = matStd(0xffe566, {
-        metalness: 0.85,
-        roughness: 0.18,
-        emissive: 0xffd700,
-        emissiveIntensity: 1.1,
-      });
-      add(new THREE.SphereGeometry(0.14, 14, 14), glow, hx, hy, -0.54);
-      add(new THREE.CylinderGeometry(0.04, 0.07, 0.34, 10), accentMat, hx, hy + 0.11, -0.74, 0.55, 0, 0);
-      add(new THREE.TorusGeometry(0.1, 0.025, 6, 16), glow, hx, hy, -0.48, 0.4, 0, 0);
-      add(new THREE.BoxGeometry(0.06, 0.06, 0.06), glow, hx + 0.1, hy + 0.08, -0.5);
-      return finishVm(root);
-    }
-    case "gg_banana_peel": {
-      add(new THREE.BoxGeometry(0.13, 0.13, 0.44), gunMat, hx, hy, -0.52);
-      add(new THREE.BoxGeometry(0.07, 0.06, 0.3), accentMat, hx, hy + 0.08, -0.86);
-      add(new THREE.SphereGeometry(0.09, 12, 12), accentMat, hx, hy - 0.02, -1.04);
-      add(new THREE.BoxGeometry(0.05, 0.12, 0.05), gunMat, hx - 0.09, hy + 0.05, -0.72, 0, 0, 0.4);
-      add(new THREE.BoxGeometry(0.05, 0.12, 0.05), gunMat, hx + 0.09, hy + 0.05, -0.72, 0, 0, -0.4);
-      add(new THREE.BoxGeometry(0.05, 0.1, 0.05), gunMat, hx, hy + 0.1, -0.78);
-      return finishVm(root);
-    }
-    case "gg_bees": {
-      add(new THREE.BoxGeometry(0.2, 0.2, 0.38), gunMat, hx, hy, -0.52);
-      add(new THREE.BoxGeometry(0.22, 0.06, 0.22), accentMat, hx, hy + 0.12, -0.52);
-      add(new THREE.BoxGeometry(0.22, 0.06, 0.22), accentMat, hx, hy - 0.12, -0.52);
-      add(new THREE.BoxGeometry(0.22, 0.06, 0.1), accentMat, hx, hy, -0.36);
-      const pump = add(
-        new THREE.CylinderGeometry(0.07, 0.09, 0.4, 10),
-        accentMat,
-        hx,
-        hy,
-        -0.94,
-        Math.PI / 2,
-        0,
-        0,
-      );
-      add(new THREE.SphereGeometry(0.035, 6, 6), glowMat, hx + 0.1, hy + 0.1, -0.44);
-      add(new THREE.SphereGeometry(0.03, 6, 6), glowMat, hx - 0.1, hy - 0.06, -0.5);
+      add(new THREE.SphereGeometry(0.022, 6, 6), glowMat, hx + 0.06, hy + 0.07, -0.5);
+      add(new THREE.SphereGeometry(0.018, 5, 5), glowMat, hx - 0.06, hy - 0.02, -0.55);
       root.userData.animParts = { pump };
       return finishVm(root);
     }
     case "gg_confetti": {
-      add(new THREE.BoxGeometry(0.12, 0.14, 0.48), gunMat, hx, hy, -0.54);
-      add(new THREE.BoxGeometry(0.16, 0.06, 0.16), accentMat, hx, hy + 0.11, -0.7);
-      add(new THREE.BoxGeometry(0.06, 0.06, 0.32), glowMat, hx, hy, -0.94);
-      add(new THREE.BoxGeometry(0.07, 0.16, 0.1), accentMat, hx, hy - 0.14, -0.42);
-      add(new THREE.BoxGeometry(0.04, 0.04, 0.04), glowMat, hx + 0.08, hy + 0.08, -0.8);
-      add(new THREE.BoxGeometry(0.04, 0.04, 0.04), accentMat, hx - 0.07, hy + 0.04, -0.88);
+      grip();
+      stock();
+      add(new THREE.BoxGeometry(0.09, 0.1, 0.34), gunMat, hx, hy + 0.02, -0.62);
+      add(new THREE.BoxGeometry(0.11, 0.04, 0.11), accentMat, hx, hy + 0.09, -0.72);
+      add(new THREE.BoxGeometry(0.04, 0.04, 0.26), glowMat, hx, hy + 0.03, -0.92);
+      add(new THREE.BoxGeometry(0.03, 0.03, 0.03), glowMat, hx + 0.055, hy + 0.07, -0.82);
+      add(new THREE.BoxGeometry(0.03, 0.03, 0.03), accentMat, hx - 0.05, hy + 0.04, -0.9);
+      add(new THREE.BoxGeometry(0.03, 0.03, 0.03), glowMat, hx + 0.02, hy + 0.1, -0.95);
+      add(new THREE.BoxGeometry(0.05, 0.04, 0.08), gunMat, hx, hy + 0.09, -0.5);
       return finishVm(root);
     }
     case "gg_disco": {
-      add(new THREE.BoxGeometry(0.15, 0.15, 0.48), gunMat, hx, hy, -0.54);
-      const ball = add(new THREE.SphereGeometry(0.11, 14, 14), glowMat, hx, hy + 0.14, -0.44);
+      grip();
+      stock();
+      add(new THREE.BoxGeometry(0.11, 0.1, 0.32), gunMat, hx, hy + 0.02, -0.6);
+      const ball = add(new THREE.SphereGeometry(0.065, 12, 12), glowMat, hx, hy + 0.1, -0.48);
       root.userData.animParts = { ball };
-      add(new THREE.CylinderGeometry(0.045, 0.045, 0.48, 8), accentMat, hx - 0.06, hy, -1.0, Math.PI / 2, 0, 0);
-      add(new THREE.CylinderGeometry(0.045, 0.045, 0.48, 8), gunMat, hx + 0.06, hy, -1.0, Math.PI / 2, 0, 0);
-      add(new THREE.BoxGeometry(0.08, 0.08, 0.08), accentMat, hx, hy - 0.1, -0.36);
+      add(new THREE.CylinderGeometry(0.03, 0.03, 0.34, 8), accentMat, hx - 0.04, hy + 0.02, -0.94, Math.PI / 2, 0, 0);
+      add(new THREE.CylinderGeometry(0.03, 0.03, 0.34, 8), gunMat, hx + 0.04, hy + 0.02, -0.94, Math.PI / 2, 0, 0);
+      add(new THREE.BoxGeometry(0.055, 0.04, 0.08), accentMat, hx, hy + 0.08, -0.55);
       return finishVm(root);
     }
     case "gg_accordion": {
-      add(new THREE.BoxGeometry(0.28, 0.18, 0.22), gunMat, hx, hy, -0.48);
-      const bellows = add(new THREE.BoxGeometry(0.24, 0.15, 0.14), accentMat, hx, hy, -0.7);
-      add(new THREE.BoxGeometry(0.28, 0.18, 0.18), gunMat, hx, hy, -0.92);
-      add(new THREE.BoxGeometry(0.1, 0.1, 0.24), glowMat, hx, hy + 0.02, -1.12);
-      add(new THREE.BoxGeometry(0.06, 0.2, 0.04), accentMat, hx - 0.14, hy, -0.7);
-      add(new THREE.BoxGeometry(0.06, 0.2, 0.04), accentMat, hx + 0.14, hy, -0.7);
+      grip();
+      add(new THREE.BoxGeometry(0.16, 0.11, 0.14), gunMat, hx, hy + 0.02, -0.5);
+      const bellows = add(new THREE.BoxGeometry(0.14, 0.09, 0.12), accentMat, hx, hy + 0.02, -0.68);
+      add(new THREE.BoxGeometry(0.16, 0.11, 0.12), gunMat, hx, hy + 0.02, -0.86);
+      add(new THREE.BoxGeometry(0.06, 0.06, 0.18), glowMat, hx, hy + 0.03, -1.04);
+      add(new THREE.BoxGeometry(0.04, 0.12, 0.03), accentMat, hx - 0.09, hy + 0.02, -0.68);
+      add(new THREE.BoxGeometry(0.04, 0.12, 0.03), accentMat, hx + 0.09, hy + 0.02, -0.68);
       root.userData.animParts = { bellows };
       return finishVm(root);
     }
     case "gg_flappy": {
-      add(new THREE.BoxGeometry(0.13, 0.13, 0.36), gunMat, hx, hy, -0.5);
-      const wing = add(new THREE.BoxGeometry(0.36, 0.04, 0.14), accentMat, hx, hy + 0.09, -0.68);
-      add(new THREE.BoxGeometry(0.36, 0.04, 0.1), glowMat, hx, hy - 0.02, -0.7);
-      add(new THREE.BoxGeometry(0.055, 0.055, 0.28), glowMat, hx, hy, -0.9);
-      add(new THREE.SphereGeometry(0.055, 8, 8), gunMat, hx, hy + 0.05, -0.38);
-      add(new THREE.ConeGeometry(0.04, 0.08, 6), accentMat, hx + 0.04, hy + 0.05, -0.32, Math.PI / 2, 0, 0);
+      grip();
+      stock();
+      add(new THREE.BoxGeometry(0.09, 0.09, 0.24), gunMat, hx, hy + 0.02, -0.56);
+      const wing = add(new THREE.BoxGeometry(0.24, 0.03, 0.1), accentMat, hx, hy + 0.08, -0.68);
+      add(new THREE.BoxGeometry(0.22, 0.025, 0.07), glowMat, hx, hy - 0.01, -0.7);
+      add(new THREE.BoxGeometry(0.04, 0.04, 0.22), glowMat, hx, hy + 0.02, -0.88);
+      add(new THREE.SphereGeometry(0.04, 8, 8), gunMat, hx, hy + 0.05, -0.42);
+      add(new THREE.ConeGeometry(0.028, 0.055, 6), accentMat, hx + 0.03, hy + 0.05, -0.36, Math.PI / 2, 0, 0);
       root.userData.animParts = { wing };
       return finishVm(root);
     }

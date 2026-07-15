@@ -33,6 +33,8 @@ export type PlayerMoveState = {
   crouching: boolean;
   /** Previous-frame jump button for edge-trigger. */
   jumpHeld: boolean;
+  /** Remaining mid-air jumps (refilled on landing). */
+  airJumpsLeft: number;
 };
 
 const _wish = vec3();
@@ -130,6 +132,7 @@ export function applyMovement(
   const wishspeed = maxSpeed;
 
   if (state.grounded) {
+    state.airJumpsLeft = MOVE.AIR_JUMPS;
     const accel =
       MOVE.ACCELERATE * (sprinting ? MOVE.SPRINT_ACCEL_MULT : 1);
     accelerate(state.velocity, _wish, wishspeed, accel, dt);
@@ -147,6 +150,11 @@ export function applyMovement(
     _accelDir.y = 0;
     _accelDir.z = _wish.z;
     accelerate(state.velocity, _accelDir, airWish, MOVE.AIR_ACCELERATE, dt);
+    const jumpEdge = buttons.jump && !state.jumpHeld;
+    if (jumpEdge && state.airJumpsLeft > 0) {
+      state.airJumpsLeft -= 1;
+      state.velocity.y = MOVE.JUMP_VELOCITY;
+    }
     state.velocity.y -= MOVE.GRAVITY * dt;
   }
 
@@ -181,6 +189,7 @@ export function applyMovement(
   }
 
   state.grounded = grounded;
+  if (grounded) state.airJumpsLeft = MOVE.AIR_JUMPS;
   state.jumpHeld = buttons.jump;
 }
 
@@ -198,6 +207,7 @@ export function createMoveState(
     grounded: false,
     crouching: false,
     jumpHeld: false,
+    airJumpsLeft: MOVE.AIR_JUMPS,
   };
 }
 
@@ -213,6 +223,7 @@ export function copyMoveState(out: PlayerMoveState, src: PlayerMoveState): void 
   out.grounded = src.grounded;
   out.crouching = src.crouching;
   out.jumpHeld = src.jumpHeld;
+  out.airJumpsLeft = src.airJumpsLeft;
 }
 
 export function cloneMoveState(src: PlayerMoveState): PlayerMoveState {

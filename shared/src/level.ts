@@ -23,9 +23,14 @@ export type LevelProp = {
   collider?: { sx: number; sy: number; sz: number };
 };
 
+/** Visual / atmosphere theme for ground, sky, and border dressings. */
+export type MapTheme = "grass" | "desert";
+
 export type LevelFile = {
   version: 1;
   name: string;
+  /** Defaults to grass meadow look. */
+  theme?: MapTheme;
   arenaW: number;
   arenaD: number;
   wallH?: number;
@@ -52,6 +57,7 @@ export type CompiledArena = {
   decorations: MapDecoration[];
   arenaW: number;
   arenaD: number;
+  theme: MapTheme;
 };
 
 function shellBoxes(
@@ -191,6 +197,7 @@ export function compileLevel(level: LevelFile): CompiledArena {
     decorations,
     arenaW: level.arenaW,
     arenaD: level.arenaD,
+    theme: level.theme === "desert" ? "desert" : "grass",
   };
 }
 
