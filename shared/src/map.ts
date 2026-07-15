@@ -7,7 +7,12 @@ import type { Vec3 } from "./math.js";
 export type { MapBox, MapDecoration, MapSurface, SpawnZone };
 export type { LevelFile, LevelProp, CompiledArena } from "./level.js";
 export { compileLevel } from "./level.js";
-export { MODEL_CATALOG, getModelInfo, autoCollider } from "./modelCatalog.js";
+export {
+  MODEL_CATALOG,
+  getModelInfo,
+  autoCollider,
+  isNonSolidModel,
+} from "./modelCatalog.js";
 
 /** Dimensions from the active level (updated when buildArena runs). */
 export let ARENA_W = (defaultLevel as LevelFile).arenaW;

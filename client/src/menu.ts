@@ -1,164 +1,114 @@
-import {
-  CLASS_LIST,
-  DEFAULT_CLASS_ID,
-  GUN_GAME_LADDER,
-  type ClassId,
-  type GameMode,
-} from "@fps/shared";
+import { type GameMode } from "@fps/shared";
+import { loadSettings, saveSettings, type GameSettings } from "./settings";
 
 export type MenuSelection = {
   mode: GameMode;
-  classId: ClassId;
 };
 
-function fillClassDetail(id: ClassId): void {
-  const detailName = document.getElementById("class-detail-name")!;
-  const detailTag = document.getElementById("class-detail-tag")!;
-  const detailDesc = document.getElementById("class-detail-desc")!;
-  const detailStats = document.getElementById("class-detail-stats")!;
-  const cls = CLASS_LIST.find((c) => c.id === id)!;
-  detailName.textContent = cls.name;
-  detailTag.textContent = cls.tagline;
-  detailDesc.textContent = cls.description;
-  const w = cls.weapon;
-  detailStats.innerHTML =
-    `<li><span>Weapon</span><b>${w.name}</b></li>` +
-    `<li><span>Ability 1</span><b>${cls.ability1.name} [1]</b></li>` +
-    `<li><span>Ability 2</span><b>${cls.ability2.name} [2]</b></li>` +
-    `<li><span>${cls.ability1.name}</span><b>${cls.ability1.description}</b></li>` +
-    `<li><span>${cls.ability2.name}</span><b>${cls.ability2.description}</b></li>` +
-    `<li><span>Speed</span><b>${Math.round(cls.speedMult * 100)}%</b></li>`;
-}
-
-function fillGunGameDetail(): void {
-  const detailName = document.getElementById("class-detail-name")!;
-  const detailTag = document.getElementById("class-detail-tag")!;
-  const detailDesc = document.getElementById("class-detail-desc")!;
-  const detailStats = document.getElementById("class-detail-stats")!;
-  detailName.textContent = "Gun Game";
-  detailTag.textContent = "20 weapons · FFA · one kill upgrades you";
-  detailDesc.textContent =
-    "Everyone starts with the Pea Shooter. Each kill unlocks the next ridiculous weapon. First player to score a kill with the Golden Banana wins the match.";
-  detailStats.innerHTML = GUN_GAME_LADDER.map(
-    (w, i) =>
-      `<li><span>#${i + 1}</span><b>${w.name}</b></li>`,
-  ).join("");
-}
-
 /**
- * Main menu: mode + class selector. Returns when the player hits Play.
+ * Pixel wooden-plank main menu. Resolves when Play is chosen.
  */
-export function showMainMenu(): Promise<MenuSelection> {
+export function showMainMenu(
+  onSettingsChange?: (s: GameSettings) => void,
+): Promise<MenuSelection> {
   const root = document.getElementById("main-menu")!;
+  const home = document.getElementById("menu-home")!;
+  const settingsPanel = document.getElementById("menu-settings")!;
+  const creditsPanel = document.getElementById("menu-credits")!;
   const playBtn = document.getElementById("play-btn") as HTMLButtonElement;
-  const grid = document.getElementById("class-grid")!;
-  const modeAbility = document.getElementById("mode-ability") as HTMLButtonElement;
-  const modeGun = document.getElementById("mode-gun") as HTMLButtonElement;
-  const classPanel = document.getElementById("class-panel")!;
+  const settingsBtn = document.getElementById(
+    "menu-settings-btn",
+  ) as HTMLButtonElement;
+  const creditsBtn = document.getElementById(
+    "menu-credits-btn",
+  ) as HTMLButtonElement;
+  const exitBtn = document.getElementById("menu-exit-btn") as HTMLButtonElement;
+  const settingsBack = document.getElementById(
+    "menu-settings-back",
+  ) as HTMLButtonElement;
+  const creditsBack = document.getElementById(
+    "menu-credits-back",
+  ) as HTMLButtonElement;
+  const sensSlider = document.getElementById(
+    "menu-setting-sens",
+  ) as HTMLInputElement;
+  const sensVal = document.getElementById("menu-setting-sens-val")!;
+  const volSlider = document.getElementById(
+    "menu-setting-vol",
+  ) as HTMLInputElement;
+  const volVal = document.getElementById("menu-setting-vol-val")!;
+  const musicSlider = document.getElementById(
+    "menu-setting-music",
+  ) as HTMLInputElement;
+  const musicVal = document.getElementById("menu-setting-music-val")!;
 
-  let selected: ClassId = DEFAULT_CLASS_ID;
-  let mode: GameMode = "ability";
+  let settings = loadSettings();
+
+  function syncSliders(): void {
+    sensSlider.value = String(settings.mouseSens);
+    sensVal.textContent = `${settings.mouseSens.toFixed(2)}x`;
+    volSlider.value = String(settings.volume);
+    volVal.textContent = `${Math.round(settings.volume * 100)}%`;
+    musicSlider.value = String(settings.musicVolume);
+    musicVal.textContent = `${Math.round(settings.musicVolume * 100)}%`;
+  }
+
+  function showPanel(which: "home" | "settings" | "credits"): void {
+    home.classList.toggle("hidden", which !== "home");
+    settingsPanel.classList.toggle("hidden", which !== "settings");
+    creditsPanel.classList.toggle("hidden", which !== "credits");
+    if (which === "settings") syncSliders();
+  }
+
   root.classList.remove("hidden");
+  showPanel("home");
+  syncSliders();
+  requestAnimationFrame(() => root.classList.add("menu-ready"));
 
-  grid.innerHTML = "";
-  for (const cls of CLASS_LIST) {
-    const card = document.createElement("button");
-    card.type = "button";
-    card.className = "class-card";
-    card.dataset.id = cls.id;
-    card.innerHTML =
-      `<span class="class-card-name">${cls.name}</span>` +
-      `<span class="class-card-weapon">${cls.weapon.name}</span>` +
-      `<span class="class-card-tag">${cls.tagline}</span>`;
-    card.addEventListener("click", () => select(cls.id));
-    grid.appendChild(card);
-  }
+  sensSlider.oninput = () => {
+    settings = { ...settings, mouseSens: Number(sensSlider.value) };
+    sensVal.textContent = `${settings.mouseSens.toFixed(2)}x`;
+    saveSettings(settings);
+    onSettingsChange?.(settings);
+  };
 
-  function select(id: ClassId) {
-    selected = id;
-    for (const el of grid.querySelectorAll(".class-card")) {
-      el.classList.toggle("selected", (el as HTMLElement).dataset.id === id);
-    }
-    if (mode === "ability") fillClassDetail(id);
-  }
+  volSlider.oninput = () => {
+    settings = { ...settings, volume: Number(volSlider.value) };
+    volVal.textContent = `${Math.round(settings.volume * 100)}%`;
+    saveSettings(settings);
+    onSettingsChange?.(settings);
+  };
 
-  function setMode(next: GameMode) {
-    mode = next;
-    modeAbility.classList.toggle("active", mode === "ability");
-    modeGun.classList.toggle("active", mode === "gun_game");
-    classPanel.classList.toggle("hidden", mode === "gun_game");
-    if (mode === "gun_game") {
-      fillGunGameDetail();
-      playBtn.textContent = "Enter Gun Game";
-    } else {
-      fillClassDetail(selected);
-      playBtn.textContent = "Enter Match";
-    }
-  }
+  musicSlider.oninput = () => {
+    settings = { ...settings, musicVolume: Number(musicSlider.value) };
+    musicVal.textContent = `${Math.round(settings.musicVolume * 100)}%`;
+    saveSettings(settings);
+    onSettingsChange?.(settings);
+  };
 
-  modeAbility.onclick = () => setMode("ability");
-  modeGun.onclick = () => setMode("gun_game");
+  settingsBtn.onclick = () => showPanel("settings");
+  creditsBtn.onclick = () => showPanel("credits");
+  settingsBack.onclick = () => showPanel("home");
+  creditsBack.onclick = () => showPanel("home");
 
-  select(selected);
-  setMode("ability");
+  exitBtn.onclick = () => {
+    window.close();
+    // Browsers block window.close() unless opened by script — soft fallback:
+    exitBtn.querySelector("span")!.textContent = "Bye!";
+    window.setTimeout(() => {
+      exitBtn.querySelector("span")!.textContent = "Exit";
+    }, 1200);
+  };
 
   return new Promise((resolve) => {
     playBtn.onclick = () => {
-      root.classList.add("hidden");
-      resolve({ mode, classId: selected });
+      root.classList.remove("menu-ready");
+      root.classList.add("menu-leaving");
+      window.setTimeout(() => {
+        root.classList.add("hidden");
+        root.classList.remove("menu-leaving");
+        resolve({ mode: "gun_game" });
+      }, 380);
     };
   });
 }
-
-/**
- * In-match class swap overlay. Calls onPick when a class is chosen.
- */
-export function bindClassSwapMenu(onPick: (id: ClassId) => void): {
-  setOpen: (open: boolean) => void;
-  isOpen: () => boolean;
-} {
-  const root = document.getElementById("class-swap")!;
-  const grid = document.getElementById("class-swap-grid")!;
-  let open = false;
-  let selected: ClassId = DEFAULT_CLASS_ID;
-
-  grid.innerHTML = "";
-  for (const cls of CLASS_LIST) {
-    const card = document.createElement("button");
-    card.type = "button";
-    card.className = "class-card swap-card";
-    card.dataset.id = cls.id;
-    card.innerHTML =
-      `<span class="class-card-name">${cls.name}</span>` +
-      `<span class="class-card-weapon">${cls.ability1.name} · ${cls.ability2.name}</span>` +
-      `<span class="class-card-tag">${cls.tagline}</span>`;
-    card.addEventListener("click", (e) => {
-      e.stopPropagation();
-      selected = cls.id;
-      onPick(cls.id);
-      setOpen(false);
-    });
-    grid.appendChild(card);
-  }
-
-  function setOpen(next: boolean) {
-    open = next;
-    root.classList.toggle("hidden", !open);
-    if (open) {
-      document.exitPointerLock();
-      for (const el of grid.querySelectorAll(".class-card")) {
-        el.classList.toggle(
-          "selected",
-          (el as HTMLElement).dataset.id === selected,
-        );
-      }
-    }
-  }
-
-  return {
-    setOpen,
-    isOpen: () => open,
-  };
-}
-
-export { fillClassDetail };

@@ -7,7 +7,25 @@
     <link rel="stylesheet" href="/src/editor/editor.css" />
   </head>
   <body>
-    <div id="editor-root">
+    <div id="editor-lock">
+      <form id="editor-lock-form" autocomplete="off">
+        <h1>Level Editor</h1>
+        <p>Admin password required</p>
+        <input
+          id="editor-lock-pass"
+          type="password"
+          name="password"
+          placeholder="Password"
+          autocomplete="current-password"
+          required
+        />
+        <button type="submit">Unlock</button>
+        <p id="editor-lock-error" class="hidden" role="alert">Wrong password</p>
+        <a href="/">← Back to game</a>
+      </form>
+    </div>
+
+    <div id="editor-root" class="hidden">
       <aside id="palette">
         <header>
           <h1>Level Editor</h1>
@@ -86,6 +104,39 @@
         </div>
       </div>
     </div>
-    <script type="module" src="/src/editor/main.ts"></script>
+    <script type="module">
+      const PASSWORD = "admindan";
+      const STORAGE_KEY = "cursorfps_editor_unlock";
+
+      const lock = document.getElementById("editor-lock");
+      const root = document.getElementById("editor-root");
+      const form = document.getElementById("editor-lock-form");
+      const input = document.getElementById("editor-lock-pass");
+      const error = document.getElementById("editor-lock-error");
+
+      async function unlockEditor() {
+        sessionStorage.setItem(STORAGE_KEY, "1");
+        lock.classList.add("hidden");
+        root.classList.remove("hidden");
+        await import("/src/editor/main.ts");
+      }
+
+      if (sessionStorage.getItem(STORAGE_KEY) === "1") {
+        void unlockEditor();
+      } else {
+        input.focus();
+        form.addEventListener("submit", (e) => {
+          e.preventDefault();
+          if (input.value === PASSWORD) {
+            error.classList.add("hidden");
+            void unlockEditor();
+            return;
+          }
+          error.classList.remove("hidden");
+          input.value = "";
+          input.focus();
+        });
+      }
+    </script>
   </body>
 </html>

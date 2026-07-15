@@ -60,22 +60,9 @@ Design the arena yourself with drag-and-drop props:
 
 The live map is loaded from **`client/public/arenas/grassareana.json`** (client fetch + server file read).
 
-### Classes
-
-| Class | Weapon | Ability 1 `[1]` | Ability 2 `[2]` |
-|-------|--------|-----------------|-----------------|
-| Frostbinder | Cryo Needle | Ice Path | Frost Trap |
-| Emberkin | Ember Burst | Scorch Dash | Ember Nest |
-| Nullshade | Shade Carbine | Phase Step | Veil |
-| Galvanaut | Coil Scatter | Arc Surge | Storm Anchor |
-
-Press **V** in-match to swap class (12s cooldown). Players start with **200 HP**.
-
 ### Gun Game
 
-Separate FFA mode (menu tab). One kill advances you through **20** meme weapons — first kill with the **Golden Banana** wins. Short-range toys (Tactical Slap, Gravity Hammer, Ban Hammer) use a max range clamp. Abilities are disabled.
-
-The server runs **two separate lobbies** (Ability Arena and Gun Game). Joining one never puts you in the other.
+FFA ladder mode. Everyone starts with the Pea Shooter; one kill advances you through **20** weapons — first kill with the **Golden Banana** wins the match and returns everyone to the menu. Short-range toys (Tactical Slap, Gravity Hammer, Ban Hammer) use a max range clamp. Players start with **200 HP**.
 
 ### Controls
 
@@ -90,14 +77,12 @@ The server runs **two separate lobbies** (Ability Arena and Gun Game). Joining o
 | RMB | Aim down sights / scope |
 | Q / E | Lean peek left / right |
 | R | Reload |
-| 1 / 2 | Class abilities |
-| V | Change class (in-match) |
 | Tab | Scoreboard |
 | Esc | Pause / release pointer |
 
 Click-to-play also requests **fullscreen** + keyboard lock (Chromium) so Ctrl+W / Ctrl+R don't close or refresh the tab mid-fight.
 
-Sounds are procedural (Web Audio): gunfire, hit confirm, damage, reload, footsteps, death.
+Sounds: procedural Web Audio plus `hitmarker.mp3` / `reload.mp3` clips.
 
 ### Test multiplayer locally
 

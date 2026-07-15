@@ -21,6 +21,7 @@ export type MoveButtons = {
   right: boolean;
   jump: boolean;
   crouch: boolean;
+  sprint: boolean;
 };
 
 export type PlayerMoveState = {
@@ -113,10 +114,15 @@ export function applyMovement(
 ): void {
   state.crouching = buttons.crouch;
   const height = playerHeight(state.crouching);
+  const sprinting =
+    buttons.sprint &&
+    !state.crouching &&
+    (buttons.forward || buttons.back || buttons.left || buttons.right);
   const maxSpeed =
     (state.crouching
       ? MOVE.MAX_SPEED * MOVE.CROUCH_SPEED_MULT
-      : MOVE.MAX_SPEED) * speedScale;
+      : MOVE.MAX_SPEED *
+        (sprinting ? MOVE.SPRINT_SPEED_MULT : 1)) * speedScale;
 
   applyFriction(state.velocity, state.grounded, dt);
 
@@ -124,7 +130,9 @@ export function applyMovement(
   const wishspeed = maxSpeed;
 
   if (state.grounded) {
-    accelerate(state.velocity, _wish, wishspeed, MOVE.ACCELERATE, dt);
+    const accel =
+      MOVE.ACCELERATE * (sprinting ? MOVE.SPRINT_ACCEL_MULT : 1);
+    accelerate(state.velocity, _wish, wishspeed, accel, dt);
     const jumpEdge = buttons.jump && !state.jumpHeld;
     if (jumpEdge) {
       state.velocity.y = MOVE.JUMP_VELOCITY;

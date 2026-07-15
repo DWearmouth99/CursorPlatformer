@@ -174,11 +174,15 @@ export function createEffects(
   let fovKick = 0;
   let bobTime = 0;
   let adsBlend = 0;
+  let sprintBlend = 0;
   let spinT = 0;
   /** 0..1 reload progress while reloading. */
   let reloadBlend = 0;
   let wasReloadingFx = false;
   let reloadPhase = 0;
+  /** Camera head-bob offsets applied by caller after positioning eye. */
+  let headBobY = 0;
+  let headBobRoll = 0;
 
   const _muzzleLocal = new THREE.Vector3(0.22, -0.16, -1.05);
   const _origin = new THREE.Vector3();
@@ -429,9 +433,16 @@ export function createEffects(
       hideViewmodel: boolean;
       reloading?: boolean;
       reloadMs?: number;
+      /** Shift-sprint active. */
+      sprint?: boolean;
+      /** Horizontal speed (m/s) for bob cadence. */
+      moveSpeed?: number;
+      grounded?: boolean;
     },
   ): void {
     adsBlend += ((opts.ads ? 1 : 0) - adsBlend) * Math.min(1, dt * 14);
+    sprintBlend +=
+      ((opts.sprint && !opts.ads ? 1 : 0) - sprintBlend) * Math.min(1, dt * 5);
 
     const reloading = !!(opts.reloading && alive);
     if (reloading && !wasReloadingFx) {
@@ -452,13 +463,24 @@ export function createEffects(
       if (reloadBlend < 0.01) reloadBlend = 0;
     }
 
-    const hipBobMul = (1 - adsBlend) * (1 - reloadBlend * 0.7);
-    bobTime += dt * (moving ? 10 : 2);
-    const bobX = moving ? Math.sin(bobTime) * 0.008 * hipBobMul : 0;
+    const spd = Math.max(0, opts.moveSpeed ?? 0);
+    const grounded = opts.grounded !== false;
+    const loco = moving && grounded && alive && spd > 1.2;
+    const sprintMul = 1 + sprintBlend * 0.65;
+    const hipBobMul = (1 - adsBlend) * (1 - reloadBlend * 0.7) * sprintMul;
+    const cadence = loco ? 7.5 + Math.min(spd, 16) * 0.55 * sprintMul : 2.2;
+    bobTime += dt * cadence;
+
+    const bobAmp = loco ? Math.min(1, (spd - 1.2) / 6) : 0;
+    const bobX = Math.sin(bobTime) * 0.01 * bobAmp * hipBobMul;
     const bobY =
-      (moving
-        ? Math.abs(Math.sin(bobTime * 2)) * 0.006
-        : Math.sin(bobTime) * 0.003) * hipBobMul;
+      Math.abs(Math.sin(bobTime * 2)) * 0.008 * bobAmp * hipBobMul +
+      (loco ? 0 : Math.sin(bobTime) * 0.002 * hipBobMul);
+
+    // Subtle camera head-bob (separate from gun sway)
+    const headAmp = loco ? 0.018 * bobAmp * (1 - adsBlend * 0.85) * (1 + sprintBlend * 0.35) : 0;
+    headBobY = Math.abs(Math.sin(bobTime * 2)) * headAmp;
+    headBobRoll = Math.sin(bobTime) * headAmp * 0.55;
 
     kick = Math.max(0, kick - dt * 0.45);
     fovKick = Math.max(0, fovKick - dt * 8);
@@ -486,10 +508,12 @@ export function createEffects(
     viewmodel.rotation.x = -kick * 1.8 - adsBlend * 0.02 - rb * 0.55 - rack;
     viewmodel.rotation.y = -adsBlend * 0.04 + spinT * 0.05 + magWiggle * 0.35;
     viewmodel.rotation.z =
-      bobX * 2 + kick * 0.3 * style.kickScale + magWiggle * 0.5 - rb * 0.15;
+      bobX * 2.4 + kick * 0.3 * style.kickScale + magWiggle * 0.5 - rb * 0.15;
     viewmodel.visible = alive && !(opts.hideViewmodel && adsBlend > 0.55 && !reloading);
 
-    const targetFov = THREE.MathUtils.lerp(baseFov, opts.adsFov, adsBlend);
+    // Sprint: slight zoom-in (narrow FOV) for a forward rush feel
+    const sprintFov = baseFov - 6.5 * sprintBlend;
+    const targetFov = THREE.MathUtils.lerp(sprintFov, opts.adsFov, adsBlend);
     camera.fov = targetFov + fovKick;
     camera.updateProjectionMatrix();
 
@@ -551,5 +575,9 @@ export function createEffects(
     }
   }
 
-  return { localShot, remoteShot, update, setWeapon };
+  function getHeadBob(): { y: number; roll: number } {
+    return { y: headBobY, roll: headBobRoll };
+  }
+
+  return { localShot, remoteShot, update, setWeapon, getHeadBob };
 }

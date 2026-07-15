@@ -6,18 +6,12 @@ export type HudState = {
   alive: boolean;
   className: string;
   weaponName: string;
-  ability1Name: string;
-  ability2Name: string;
-  ability1CdMs: number;
-  ability2CdMs: number;
-  ability1MaxMs: number;
-  ability2MaxMs: number;
   statusText: string;
   scoreboardOpen: boolean;
   players: Array<{
     id: string;
     team: string;
-    className: string;
+    weaponLabel: string;
     kills: number;
     deaths: number;
     isLocal: boolean;
@@ -35,12 +29,6 @@ export function createHud() {
   const scoreboardEl = document.getElementById("scoreboard")!;
   const scoreboardBody = document.getElementById("scoreboard-body")!;
   const respawnEl = document.getElementById("respawn-msg")!;
-  const ab1Fill = document.getElementById("ab1-fill")!;
-  const ab2Fill = document.getElementById("ab2-fill")!;
-  const ab1Label = document.getElementById("ab1-label")!;
-  const ab2Label = document.getElementById("ab2-label")!;
-  const ab1Cd = document.getElementById("ab1-cd")!;
-  const ab2Cd = document.getElementById("ab2-cd")!;
   const statusEl = document.getElementById("hud-status")!;
 
   let hitMarkerUntil = 0;
@@ -70,24 +58,6 @@ export function createHud() {
     setTimeout(() => row.remove(), 5000);
   }
 
-  function setAbilityBar(
-    fill: HTMLElement,
-    cdEl: HTMLElement,
-    label: HTMLElement,
-    name: string,
-    cdMs: number,
-    maxMs: number,
-  ): void {
-    label.textContent = name;
-    const ready = cdMs <= 0;
-    fill.parentElement?.classList.toggle("ready", ready);
-    const pct = ready
-      ? 100
-      : Math.max(0, 100 - (cdMs / Math.max(maxMs, 1)) * 100);
-    fill.style.width = `${pct}%`;
-    cdEl.textContent = ready ? "READY" : `${(cdMs / 1000).toFixed(1)}s`;
-  }
-
   function render(state: HudState, now = performance.now()): void {
     hpEl.textContent = String(Math.max(0, Math.round(state.hp)));
     ammoEl.textContent = state.reloading
@@ -97,23 +67,6 @@ export function createHud() {
     weaponEl.textContent = state.weaponName;
     statusEl.textContent = state.statusText;
     statusEl.classList.toggle("hidden", !state.statusText);
-
-    setAbilityBar(
-      ab1Fill,
-      ab1Cd,
-      ab1Label,
-      `1  ${state.ability1Name}`,
-      state.ability1CdMs,
-      state.ability1MaxMs,
-    );
-    setAbilityBar(
-      ab2Fill,
-      ab2Cd,
-      ab2Label,
-      `2  ${state.ability2Name}`,
-      state.ability2CdMs,
-      state.ability2MaxMs,
-    );
 
     hitMarkerEl.classList.toggle("visible", now < hitMarkerUntil);
     damageFlashEl.classList.toggle("visible", now < flashUntil);
@@ -130,7 +83,7 @@ export function createHud() {
           (p) =>
             `<tr class="${p.isLocal ? "local" : ""}">` +
             `<td>${p.team}</td><td>${p.id}${p.isLocal ? " (you)" : ""}</td>` +
-            `<td>${p.className}</td>` +
+            `<td>${p.weaponLabel}</td>` +
             `<td>${p.kills}</td><td>${p.deaths}</td></tr>`,
         )
         .join("");

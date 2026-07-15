@@ -4,7 +4,7 @@ import type { Vec3 } from "./math.js";
 import type { ClassId } from "./weapons.js";
 import type { AbilityFxEvent, PlayerStatus, WorldProp } from "./abilities.js";
 
-export type GameMode = "ability" | "gun_game";
+export type GameMode = "gun_game";
 
 export const BTN = {
   FORWARD: 1 << 0,
@@ -18,6 +18,7 @@ export const BTN = {
   ADS: 1 << 8,
   ABILITY1: 1 << 9,
   ABILITY2: 1 << 10,
+  SPRINT: 1 << 11,
 } as const;
 
 export type CombatButtons = MoveButtons & {
@@ -41,6 +42,7 @@ export function buttonsToBits(b: CombatButtons): number {
   if (b.ads) bits |= BTN.ADS;
   if (b.ability1) bits |= BTN.ABILITY1;
   if (b.ability2) bits |= BTN.ABILITY2;
+  if (b.sprint) bits |= BTN.SPRINT;
   return bits;
 }
 
@@ -52,6 +54,7 @@ export function bitsToButtons(bits: number): CombatButtons {
     right: (bits & BTN.RIGHT) !== 0,
     jump: (bits & BTN.JUMP) !== 0,
     crouch: (bits & BTN.CROUCH) !== 0,
+    sprint: (bits & BTN.SPRINT) !== 0,
     fire: (bits & BTN.FIRE) !== 0,
     reload: (bits & BTN.RELOAD) !== 0,
     ads: (bits & BTN.ADS) !== 0,
@@ -60,14 +63,13 @@ export function bitsToButtons(bits: number): CombatButtons {
   };
 }
 
-/** Client → server: select mode (+ class for Ability Arena). */
+/** Client → server: join the Gun Game lobby. */
 export type JoinMsg = {
   type: "join";
-  mode: GameMode;
-  classId: ClassId;
+  mode?: GameMode;
 };
 
-/** Client → server: mid-match class swap (Ability Arena only). */
+/** @deprecated Classes removed — ignored by server. */
 export type ChangeClassMsg = {
   type: "changeClass";
   classId: ClassId;
@@ -211,7 +213,7 @@ export type ServerMsg =
 export type ClientMsg = JoinMsg | ChangeClassMsg | InputCmd;
 
 export function isGameMode(v: unknown): v is GameMode {
-  return v === "ability" || v === "gun_game";
+  return v === "gun_game";
 }
 
 export function parseServerMsg(data: string): ServerMsg | null {

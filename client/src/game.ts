@@ -5,12 +5,12 @@ import {
   LEAN_ROLL,
   MAX_CLIENT_CATCHUP_TICKS,
   MAX_HP,
+  MOVE,
   PLAYER_EYE_CROUCH,
   PLAYER_EYE_STAND,
   TICK_DT,
   TICK_RATE,
   eyePosition,
-  getClass,
   getWeaponById,
   gunGameWeapon,
   gunGameWeaponById,
@@ -18,8 +18,6 @@ import {
   recoilOffsetRad,
   serverHitscan,
   spreadAngles,
-  type ClassId,
-  type GameMode,
   type SnapshotPlayer,
   type Team,
   type WeaponDef,
@@ -33,15 +31,18 @@ import { createRemotePlayers } from "./remotePlayers";
 import { createHud } from "./hud";
 import { createEffects } from "./fx";
 import { createAudio } from "./audio";
-import { bindClassSwapMenu, showMainMenu } from "./menu";
-import { createAbilityView } from "./abilityView";
+import { showMainMenu } from "./menu";
 import { bindPauseMenu } from "./pauseMenu";
 import { loadSettings } from "./settings";
-import { enterPlayMode, exitPlayMode, unlockGameKeys, shouldBlockBrowserShortcut } from "./browserLock";
+import {
+  enterPlayMode,
+  exitPlayMode,
+  unlockGameKeys,
+  shouldBlockBrowserShortcut,
+} from "./browserLock";
 
 export async function startGame(container: HTMLElement) {
-  const selection = await showMainMenu();
-  let gameMode: GameMode = selection.mode;
+  await showMainMenu();
 
   const overlay = document.getElementById("overlay")!;
   const overlayHint = document.getElementById("overlay-hint")!;
@@ -51,11 +52,14 @@ export async function startGame(container: HTMLElement) {
   const scopeIron = document.getElementById("scope-iron")!;
   const scopeOptic = document.getElementById("scope-optic")!;
   const scopeSniper = document.getElementById("scope-sniper")!;
-  const abilityBars = document.getElementById("ability-bars")!;
   const gunLadder = document.getElementById("gun-ladder")!;
   const gunLadderLevel = document.getElementById("gun-ladder-level")!;
   const gunLadderWeapon = document.getElementById("gun-ladder-weapon")!;
   const gunLadderNext = document.getElementById("gun-ladder-next")!;
+  const staminaBar = document.getElementById("stamina-bar")!;
+  const staminaFill = document.getElementById("stamina-fill")!;
+
+  gunLadder.classList.remove("hidden");
 
   overlay.classList.remove("hidden");
   overlayHint.textContent = "Connecting to server…";
@@ -79,23 +83,18 @@ export async function startGame(container: HTMLElement) {
   const world = await createWorld(scene);
   overlayHint.textContent = "Connecting to server…";
   const remotes = createRemotePlayers(scene);
-  const abilityView = createAbilityView(scene);
-  let classId: ClassId = selection.classId;
   let gunLevel = 0;
   let localMoveMult = 1;
-  let localAb1Cd = 0;
-  let localAb2Cd = 0;
   let localStatusText = "";
-  const prediction = createPrediction(world.solids, () =>
-    gameMode === "gun_game"
-      ? 1.05 * localMoveMult
-      : getClass(classId).speedMult * localMoveMult,
-  );
+  let matchOver = false;
+  const staminaMax = MOVE.STAMINA_SECONDS;
+  let stamina = staminaMax;
+  let staminaExhausted = false;
+  let localSprinting = false;
+  const prediction = createPrediction(world.solids, () => 1.05 * localMoveMult);
 
   function activeWeapon(): WeaponDef {
-    return gameMode === "gun_game"
-      ? gunGameWeapon(gunLevel)
-      : getClass(classId).weapon;
+    return gunGameWeapon(gunLevel);
   }
 
   let lastWeaponId = "";
@@ -111,11 +110,6 @@ export async function startGame(container: HTMLElement) {
     return gunGameWeaponById(id) ?? getWeaponById(id);
   }
 
-  function syncModeUi(): void {
-    const gg = gameMode === "gun_game";
-    abilityBars.classList.toggle("hidden", gg);
-    gunLadder.classList.toggle("hidden", !gg);
-  }
   const interpolator = createInterpolator();
   const hud = createHud();
   const fx = createEffects(scene, camera);
@@ -126,19 +120,20 @@ export async function startGame(container: HTMLElement) {
   const initialSettings = loadSettings();
   input.setUserSens(initialSettings.mouseSens);
   audio.setVolume(initialSettings.volume);
-
-  let classMenuWasDown = false;
-  let requestClassChange: (id: ClassId) => void = () => {};
-  const classSwap = bindClassSwapMenu((id) => requestClassChange(id));
+  audio.setMusicVolume(initialSettings.musicVolume);
 
   const pauseMenu = bindPauseMenu({
     onResume() {
+      if (matchOver) return;
       overlay.classList.add("hidden");
       audio.unlock();
+      audio.startMusic();
       void enterPlayMode();
       renderer.domElement.requestPointerLock();
     },
     onMainMenu() {
+      audio.stopMusic();
+      audio.setWalking(false);
       exitPlayMode();
       socket.close();
       window.location.reload();
@@ -146,6 +141,7 @@ export async function startGame(container: HTMLElement) {
     onSettingsChange(s) {
       input.setUserSens(s.mouseSens);
       audio.setVolume(s.volume);
+      audio.setMusicVolume(s.musicVolume);
     },
   });
   let localId: string | null = null;
@@ -169,17 +165,31 @@ export async function startGame(container: HTMLElement) {
   let localSpray = 0;
   let localLastFireTick = -999;
   let clientTick = 0;
-  let footstepAcc = 0;
+
+  function endMatch(winnerId: string): void {
+    if (matchOver) return;
+    matchOver = true;
+    audio.setWalking(false);
+    pauseMenu.setOpen(false);
+    document.exitPointerLock();
+    exitPlayMode();
+    unlockGameKeys();
+    overlay.classList.remove("hidden");
+    const you = winnerId === localId;
+    overlayHint.textContent = you
+      ? "YOU WIN!\nReturning to menu…"
+      : `${winnerId} wins Gun Game!\nReturning to menu…`;
+    window.setTimeout(() => {
+      socket.close();
+      window.location.reload();
+    }, 6500);
+  }
 
   const socket = createGameSocket({
     onOpen() {
       connected = true;
       overlayHint.textContent = "Joining match…";
-      socket.send({
-        type: "join",
-        mode: selection.mode,
-        classId: selection.classId,
-      });
+      socket.send({ type: "join", mode: "gun_game" });
     },
     onClose() {
       connected = false;
@@ -197,8 +207,6 @@ export async function startGame(container: HTMLElement) {
       if (msg.type === "welcome") {
         localId = msg.playerId;
         localTeam = msg.team;
-        classId = msg.classId;
-        gameMode = msg.mode ?? selection.mode;
         serverTick = msg.tick;
         welcomed = true;
         latestPlayers = msg.players;
@@ -217,19 +225,14 @@ export async function startGame(container: HTMLElement) {
           localAlive = self.alive;
         }
         interpolator.push(performance.now(), msg.players, msg.tick);
-        if (msg.props) abilityView.syncProps(msg.props);
         hudRoot.classList.remove("hidden");
-        syncModeUi();
-        const modeLabel =
-          gameMode === "gun_game"
-            ? "Gun Game lobby"
-            : `Ability Arena · ${getClass(classId).name}`;
-        overlayHint.textContent = `Joined ${modeLabel} — click to play`;
+        overlayHint.textContent = "Joined Gun Game — click to play";
+        audio.unlock();
+        audio.startMusic();
       } else if (msg.type === "snapshot") {
         serverTick = msg.tick;
         lastAck = msg.ackSeq;
         latestPlayers = msg.players;
-        if (msg.props) abilityView.syncProps(msg.props);
         const sentAt = inputSendAt.get(msg.ackSeq);
         if (sentAt !== undefined) {
           const sample = performance.now() - sentAt;
@@ -244,7 +247,6 @@ export async function startGame(container: HTMLElement) {
         const self = msg.players.find((p) => p.id === localId);
         if (self && welcomed) {
           const wasAlive = localAlive;
-          classId = self.classId;
           gunLevel = self.gunLevel ?? gunLevel;
           prediction.reconcile(msg.ackSeq, self);
           localHp = self.hp;
@@ -252,16 +254,8 @@ export async function startGame(container: HTMLElement) {
           localMag = self.magSize;
           localReloading = self.reloading;
           localAlive = self.alive;
-          localAb1Cd = self.ab1CdMs ?? 0;
-          localAb2Cd = self.ab2CdMs ?? 0;
           localMoveMult = self.status?.moveMult ?? 1;
-          const st = self.status;
-          const bits: string[] = [];
-          if (st && st.frozenUntil > serverTick) bits.push("FROZEN");
-          if (st && st.veiledUntil > serverTick) bits.push("VEILED");
-          if (st && st.burningUntil > serverTick) bits.push("BURNING");
-          if (st && st.icePathUntil > serverTick) bits.push("ICE PATH");
-          localStatusText = bits.join(" · ");
+          localStatusText = "";
           if (!wasAlive && self.alive) {
             prediction.resetFromSnapshot(self);
             input.look.yaw = self.yaw;
@@ -305,16 +299,6 @@ export async function startGame(container: HTMLElement) {
           resolveWeapon(msg.weaponId),
         );
         audio.shoot(false);
-      } else if (msg.type === "abilityFx") {
-        abilityView.playFx(msg);
-      } else if (msg.type === "classChanged") {
-        if (msg.playerId === localId) {
-          classId = msg.classId;
-          const cls = getClass(classId);
-          localMag = cls.weapon.magSize;
-          localAmmo = cls.weapon.magSize;
-          hud.pushKillFeed(`Swapped to ${cls.name}`);
-        }
       } else if (msg.type === "gunAdvance") {
         if (msg.playerId === localId) {
           gunLevel = msg.gunLevel;
@@ -331,25 +315,19 @@ export async function startGame(container: HTMLElement) {
         hud.pushKillFeed(
           you ? "YOU WIN GUN GAME!" : `${msg.playerId} wins Gun Game!`,
         );
-        if (you) {
-          overlay.classList.remove("hidden");
-          overlayHint.textContent = "You win Gun Game! — click to keep playing";
-          document.exitPointerLock();
-        }
+        endMatch(msg.playerId);
       }
     },
   });
 
-  requestClassChange = (id) => {
-    socket.send({ type: "changeClass", classId: id });
-  };
   overlayHint.textContent =
     `Connecting to ${socket.url}…\n(Free hosts can take up to a minute to wake)`;
   socket.connect();
 
   function requestLock() {
-    if (!welcomed || classSwap.isOpen() || pauseMenu.isOpen()) return;
+    if (!welcomed || matchOver || pauseMenu.isOpen()) return;
     audio.unlock();
+    audio.startMusic();
     void enterPlayMode();
     renderer.domElement.requestPointerLock();
   }
@@ -360,15 +338,22 @@ export async function startGame(container: HTMLElement) {
   document.addEventListener("pointerlockchange", () => {
     const locked = document.pointerLockElement === renderer.domElement;
     if (locked) {
+      if (matchOver) {
+        document.exitPointerLock();
+        return;
+      }
       pauseMenu.setOpen(false);
       overlay.classList.add("hidden");
       audio.unlock();
       void enterPlayMode();
       return;
     }
-    // Esc / unlock while in match → pause menu (not the click-to-play overlay).
     unlockGameKeys();
-    if (welcomed && !classSwap.isOpen()) {
+    if (matchOver) {
+      overlay.classList.remove("hidden");
+      return;
+    }
+    if (welcomed) {
       pauseMenu.setOpen(true);
       overlay.classList.add("hidden");
     } else {
@@ -384,11 +369,7 @@ export async function startGame(container: HTMLElement) {
         // Do not stopPropagation — input.ts still needs these keydowns.
       }
       if (e.code !== "Escape") return;
-      if (!welcomed) return;
-      if (classSwap.isOpen()) {
-        classSwap.setOpen(false);
-        return;
-      }
+      if (!welcomed || matchOver) return;
       if (pauseMenu.isOpen()) {
         e.preventDefault();
         pauseMenu.setOpen(false);
@@ -407,9 +388,9 @@ export async function startGame(container: HTMLElement) {
   let last = performance.now();
 
   function simTick(): void {
-    if (!welcomed) return;
+    if (!welcomed || matchOver) return;
     clientTick += 1;
-    const buttons = input.getCombatButtons(gameMode === "ability");
+    const buttons = input.getCombatButtons(false);
     const weapon = activeWeapon();
     const fireCooldownTicks = Math.max(1, Math.round(TICK_RATE / weapon.fireRate));
 
@@ -421,7 +402,31 @@ export async function startGame(container: HTMLElement) {
       buttons.jump = false;
       buttons.fire = false;
       buttons.reload = false;
+      buttons.sprint = false;
     }
+
+    const moving =
+      buttons.forward || buttons.back || buttons.left || buttons.right;
+    let canSprint =
+      localAlive &&
+      buttons.sprint &&
+      moving &&
+      !buttons.crouch &&
+      !staminaExhausted &&
+      stamina > 0;
+    if (canSprint) {
+      stamina = Math.max(0, stamina - TICK_DT);
+      if (stamina <= 0) {
+        stamina = 0;
+        staminaExhausted = true;
+        canSprint = false;
+      }
+    } else {
+      stamina = Math.min(staminaMax, stamina + TICK_DT);
+      if (stamina >= staminaMax) staminaExhausted = false;
+    }
+    buttons.sprint = canSprint;
+    localSprinting = canSprint;
 
     let firedThisTick = false;
     let fireSprayIndex = 0;
@@ -509,23 +514,12 @@ export async function startGame(container: HTMLElement) {
     const frameDt = Math.min((now - last) / 1000, 0.05);
     last = now;
 
-    const classDown = input.isClassMenuHeld();
-    if (
-      classDown &&
-      !classMenuWasDown &&
-      welcomed &&
-      gameMode === "ability"
-    ) {
-      classSwap.setOpen(!classSwap.isOpen());
-    }
-    classMenuWasDown = classDown;
-
     const lean = input.updateLean(frameDt);
-    const buttons = input.getCombatButtons(gameMode === "ability");
+    const buttons = input.getCombatButtons(false);
     const weapon = activeWeapon();
     input.setAdsSensMult(buttons.ads ? weapon.adsSensMult : 1);
 
-    if (welcomed && !classSwap.isOpen() && !pauseMenu.isOpen()) {
+    if (welcomed && !matchOver && !pauseMenu.isOpen()) {
       tickAccum += frameDt;
       let steps = 0;
       while (tickAccum >= TICK_DT && steps < MAX_CLIENT_CATCHUP_TICKS) {
@@ -544,28 +538,32 @@ export async function startGame(container: HTMLElement) {
     const eyeH = player.crouching ? PLAYER_EYE_CROUCH : PLAYER_EYE_STAND;
     const rightX = Math.cos(player.yaw);
     const rightZ = -Math.sin(player.yaw);
-    camera.position.set(
-      player.position.x + rightX * LEAN_LATERAL * lean,
-      player.position.y + eyeH,
-      player.position.z + rightZ * LEAN_LATERAL * lean,
-    );
-    camera.rotation.order = "YXZ";
-    camera.rotation.y = player.yaw;
-    camera.rotation.x = player.pitch;
-    camera.rotation.z = -lean * LEAN_ROLL;
-
-    remotes.sync(interpolator.sample(localId, now), frameDt);
-    abilityView.update(now);
-    syncWeaponVisual();
     const spd = length2d(player.velocity);
     const ads = buttons.ads && localAlive;
-    fx.update(now, frameDt, localAlive, localAlive && player.grounded && spd > 1.5, {
+
+    remotes.sync(interpolator.sample(localId, now), frameDt);
+    syncWeaponVisual();
+    fx.update(now, frameDt, localAlive, localAlive && player.grounded && spd > 1.2, {
       ads,
       adsFov: weapon.adsFov,
       hideViewmodel: weapon.scopeStyle === "sniper",
       reloading: localReloading,
       reloadMs: weapon.reloadMs,
+      sprint: localSprinting,
+      moveSpeed: spd,
+      grounded: player.grounded,
     });
+    const headBob = fx.getHeadBob();
+
+    camera.position.set(
+      player.position.x + rightX * LEAN_LATERAL * lean,
+      player.position.y + eyeH + headBob.y,
+      player.position.z + rightZ * LEAN_LATERAL * lean,
+    );
+    camera.rotation.order = "YXZ";
+    camera.rotation.y = player.yaw;
+    camera.rotation.x = player.pitch;
+    camera.rotation.z = -lean * LEAN_ROLL + headBob.roll;
 
     // Scope overlays
     const showIron = ads && weapon.scopeStyle === "iron";
@@ -574,21 +572,29 @@ export async function startGame(container: HTMLElement) {
     scopeIron.classList.toggle("visible", showIron);
     scopeOptic.classList.toggle("visible", showOptic);
     scopeSniper.classList.toggle("visible", showSniper);
-    crosshairEl.classList.toggle("hidden", showSniper);
+    // Hide hip crosshair while aiming (RMB) or using sniper scope
+    crosshairEl.classList.toggle("hidden", ads || showSniper);
 
-    if (localAlive && player.grounded && spd > 2.5) {
-      footstepAcc += frameDt * spd;
-      if (footstepAcc > 2.2) {
-        footstepAcc = 0;
-        audio.footstep();
-      }
-    } else {
-      footstepAcc = 0;
-    }
+    const wasdHeld =
+      localAlive &&
+      !matchOver &&
+      !pauseMenu.isOpen() &&
+      (buttons.forward || buttons.back || buttons.left || buttons.right);
+    // Cadence tracks speed: walk ~1.0 → sprint ~1.7 smoothly
+    const walkRate = wasdHeld
+      ? 0.95 + Math.min(spd / MOVE.MAX_SPEED, 1.35) * 0.55 + (localSprinting ? 0.25 : 0)
+      : 1;
+    audio.setWalking(wasdHeld, walkRate);
 
-    const cls = getClass(classId);
+    const staminaPct = (stamina / staminaMax) * 100;
+    staminaFill.style.width = `${staminaPct}%`;
+    const showStamina =
+      localAlive && (stamina < staminaMax - 0.01 || buttons.sprint || staminaExhausted);
+    staminaBar.classList.toggle("hidden", !showStamina);
+    staminaBar.classList.toggle("exhausted", staminaExhausted);
+
     const wpn = activeWeapon();
-    if (gameMode === "gun_game") {
+
       gunLadderLevel.textContent = `${gunLevel + 1} / ${GUN_GAME_LENGTH}`;
       gunLadderWeapon.textContent = wpn.name;
       const next =
@@ -596,7 +602,7 @@ export async function startGame(container: HTMLElement) {
           ? gunGameWeapon(gunLevel + 1).name
           : "WIN on next kill";
       gunLadderNext.textContent = `Next: ${next}`;
-    }
+
     hud.render(
       {
         hp: localHp,
@@ -604,24 +610,14 @@ export async function startGame(container: HTMLElement) {
         magSize: localMag,
         reloading: localReloading,
         alive: localAlive,
-        className:
-          gameMode === "gun_game" ? "Gun Game" : cls.name,
+        className: "Gun Game",
         weaponName: wpn.name,
-        ability1Name: cls.ability1.name,
-        ability2Name: cls.ability2.name,
-        ability1CdMs: localAb1Cd,
-        ability2CdMs: localAb2Cd,
-        ability1MaxMs: cls.ability1.cooldownMs,
-        ability2MaxMs: cls.ability2.cooldownMs,
         statusText: localStatusText,
-        scoreboardOpen: input.isScoreboardOpen() && !classSwap.isOpen(),
+        scoreboardOpen: input.isScoreboardOpen(),
         players: latestPlayers.map((p) => ({
           id: p.id,
           team: p.team,
-          className:
-            gameMode === "gun_game"
-              ? `${(p.gunLevel ?? 0) + 1}. ${p.weaponName ?? "?"}`
-              : getClass(p.classId).name,
+          weaponLabel: `${(p.gunLevel ?? 0) + 1}. ${p.weaponName ?? "?"}`,
           kills: p.kills,
           deaths: p.deaths,
           isLocal: p.id === localId,
@@ -631,8 +627,9 @@ export async function startGame(container: HTMLElement) {
     );
 
     debugEl.textContent =
-      `net  ${connected ? "up" : "down"}  ping ${Math.round(rttMs)}ms  mode ${gameMode}  id ${localId ?? "-"}\n` +
-      `${gameMode === "gun_game" ? `gun ${gunLevel + 1}/${GUN_GAME_LENGTH}` : `class ${cls.id}`}  tick ${serverTick}  ack ${lastAck}\n` +
+      `net  ${connected ? "up" : "down"}  ping ${Math.round(rttMs)}ms  id ${localId ?? "-"}\n` +
+      `gun ${gunLevel + 1}/${GUN_GAME_LENGTH}  tick ${serverTick}  ack ${lastAck}\n` +
+
       `pos  ${player.position.x.toFixed(2)}  ${player.position.y.toFixed(2)}  ${player.position.z.toFixed(2)}\n` +
       `spd  ${spd.toFixed(2)} m/s`;
 

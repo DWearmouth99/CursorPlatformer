@@ -63,10 +63,16 @@ export const PLAYER_EYE_CROUCH = 0.95;
 export const MOVE = {
   /** Max ground speed (standing). */
   MAX_SPEED: 8.5,
+  /** Sprint speed multiplier (Shift). */
+  SPRINT_SPEED_MULT: 1.55,
+  /** Extra ground accel while sprinting (snappier take-off). */
+  SPRINT_ACCEL_MULT: 1.35 as number,
+  /** Seconds of continuous sprint before stamina empties. */
+  STAMINA_SECONDS: 3 as number,
   /** Crouch speed multiplier. */
   CROUCH_SPEED_MULT: 0.45,
   /** Ground acceleration (sv_accelerate). */
-  ACCELERATE: 10,
+  ACCELERATE: 12,
   /** Air acceleration (sv_airaccelerate) — higher = easier air strafe. */
   AIR_ACCELERATE: 12,
   /** Max wish speed contribution while airborne (Source air control clamp). */

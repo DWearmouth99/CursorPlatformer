@@ -95,6 +95,7 @@ export function createInput(initialYaw = 0) {
       right: keys.has("KeyD"),
       jump: keys.has("Space"),
       crouch: keys.has("KeyC"),
+      sprint: keys.has("ShiftLeft") || keys.has("ShiftRight"),
       fire: mouseLeft && locked,
       reload: keys.has("KeyR"),
       ads: mouseRight && locked,
@@ -103,14 +104,8 @@ export function createInput(initialYaw = 0) {
     };
   }
 
-  /** Ability keys — caller enables only in Ability Arena. */
-  function getCombatButtons(allowAbilities: boolean): CombatButtons {
-    const b = getButtons();
-    if (allowAbilities) {
-      b.ability1 = keys.has("Digit1") || keys.has("Numpad1");
-      b.ability2 = keys.has("Digit2") || keys.has("Numpad2");
-    }
-    return b;
+  function getCombatButtons(_allowAbilities = false): CombatButtons {
+    return getButtons();
   }
 
   /** Update smoothed lean from Q/E. Returns current lean. */

@@ -4,71 +4,125 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Cursor FPS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <div id="main-menu">
-      <div class="menu-backdrop"></div>
-      <div class="menu-shell">
-        <header class="menu-brand">
-          <h1>CURSOR FPS</h1>
-          <p class="menu-sub">Pick a mode, then deploy</p>
-        </header>
-        <div class="mode-tabs" role="tablist">
-          <button type="button" id="mode-ability" class="mode-tab active">Ability Arena</button>
-          <button type="button" id="mode-gun" class="mode-tab">Gun Game</button>
-        </div>
-        <div class="menu-body">
-          <div id="class-panel">
-            <div id="class-grid" class="class-grid"></div>
-          </div>
-          <aside class="class-detail">
-            <h2 id="class-detail-name">Frostbinder</h2>
-            <p id="class-detail-tag" class="class-detail-tag"></p>
-            <p id="class-detail-desc" class="class-detail-desc"></p>
-            <ul id="class-detail-stats" class="class-detail-stats"></ul>
-            <button type="button" id="play-btn" class="play-btn">Enter Match</button>
-          </aside>
-        </div>
-        <p class="menu-help">WASD · Mouse · Space · C crouch · LMB · RMB · Q/E lean · R reload · 1/2 abilities · V swap class · Tab scores · Esc pause · <a href="/editor.html">Level editor</a></p>
-      </div>
-    </div>
+      <div class="menu-scene" aria-hidden="true"></div>
 
-    <div id="class-swap" class="hidden">
-      <div class="class-swap-panel">
-        <h2>Change Class</h2>
-        <p class="class-swap-hint">12s cooldown between swaps · press V to close</p>
-        <div id="class-swap-grid" class="class-grid"></div>
+      <div class="menu-shell">
+        <div id="menu-home" class="menu-panel">
+          <nav class="menu-actions" aria-label="Main menu">
+            <button type="button" id="play-btn" class="wood-btn">
+              <span>Play</span>
+            </button>
+            <button type="button" id="menu-continue-btn" class="wood-btn" disabled title="No saved match">
+              <span>Continue</span>
+            </button>
+            <button type="button" id="menu-settings-btn" class="wood-btn">
+              <span>Options</span>
+            </button>
+            <button type="button" id="menu-credits-btn" class="wood-btn">
+              <span>Credits</span>
+            </button>
+            <button type="button" id="menu-exit-btn" class="wood-btn">
+              <span>Exit</span>
+            </button>
+          </nav>
+        </div>
+
+        <div id="menu-settings" class="menu-panel menu-modal hidden">
+          <h2 class="menu-modal-title">Options</h2>
+          <label class="menu-setting">
+            <span>Mouse sens</span>
+            <div class="menu-setting-row">
+              <input id="menu-setting-sens" type="range" min="0.2" max="3" step="0.05" />
+              <b id="menu-setting-sens-val">1.00x</b>
+            </div>
+          </label>
+          <label class="menu-setting">
+            <span>SFX volume</span>
+            <div class="menu-setting-row">
+              <input id="menu-setting-vol" type="range" min="0" max="1" step="0.05" />
+              <b id="menu-setting-vol-val">60%</b>
+            </div>
+          </label>
+          <label class="menu-setting">
+            <span>Music volume</span>
+            <div class="menu-setting-row">
+              <input id="menu-setting-music" type="range" min="0" max="1" step="0.05" />
+              <b id="menu-setting-music-val">2%</b>
+            </div>
+          </label>
+          <button type="button" id="menu-settings-back" class="wood-btn wood-btn-sm">
+            <span>Back</span>
+          </button>
+        </div>
+
+        <div id="menu-credits" class="menu-panel menu-modal hidden">
+          <h2 class="menu-modal-title">Credits</h2>
+          <p class="menu-credits-body">
+            Cursor FPS<br />
+            Gun Game arena<br />
+            Built with Three.js
+          </p>
+          <button type="button" id="menu-credits-back" class="wood-btn wood-btn-sm">
+            <span>Back</span>
+          </button>
+        </div>
       </div>
     </div>
 
     <div id="pause-menu" class="hidden">
       <div class="pause-backdrop"></div>
       <div class="pause-shell">
-        <div id="pause-panel-main" class="pause-panel">
-          <h2>Paused</h2>
-          <button type="button" id="pause-resume" class="pause-btn">Resume</button>
-          <button type="button" id="pause-settings" class="pause-btn">Settings</button>
-          <button type="button" id="pause-mainmenu" class="pause-btn pause-btn-danger">Main Menu</button>
-          <p class="pause-hint">Esc to resume · C crouch · V class · fullscreen stays on</p>
+        <div id="pause-panel-main" class="menu-panel menu-modal">
+          <h2 class="menu-modal-title">Paused</h2>
+          <div class="menu-actions">
+            <button type="button" id="pause-resume" class="wood-btn">
+              <span>Resume</span>
+            </button>
+            <button type="button" id="pause-settings" class="wood-btn">
+              <span>Options</span>
+            </button>
+            <button type="button" id="pause-mainmenu" class="wood-btn">
+              <span>Main Menu</span>
+            </button>
+          </div>
+          <p class="pause-hint">Esc resume · Shift sprint · C crouch</p>
         </div>
-        <div id="pause-panel-settings" class="pause-panel hidden">
-          <h2>Settings</h2>
-          <label class="pause-setting">
-            <span>Mouse sensitivity</span>
-            <div class="pause-setting-row">
+        <div id="pause-panel-settings" class="menu-panel menu-modal hidden">
+          <h2 class="menu-modal-title">Options</h2>
+          <label class="menu-setting">
+            <span>Mouse sens</span>
+            <div class="menu-setting-row">
               <input id="setting-sens" type="range" min="0.2" max="3" step="0.05" />
-              <b id="setting-sens-val">1.00×</b>
+              <b id="setting-sens-val">1.00x</b>
             </div>
           </label>
-          <label class="pause-setting">
-            <span>Master volume</span>
-            <div class="pause-setting-row">
+          <label class="menu-setting">
+            <span>SFX volume</span>
+            <div class="menu-setting-row">
               <input id="setting-vol" type="range" min="0" max="1" step="0.05" />
-              <b id="setting-vol-val">85%</b>
+              <b id="setting-vol-val">60%</b>
             </div>
           </label>
-          <button type="button" id="pause-settings-back" class="pause-btn">Back</button>
+          <label class="menu-setting">
+            <span>Music volume</span>
+            <div class="menu-setting-row">
+              <input id="setting-music" type="range" min="0" max="1" step="0.05" />
+              <b id="setting-music-val">2%</b>
+            </div>
+          </label>
+          <button type="button" id="pause-settings-back" class="wood-btn wood-btn-sm">
+            <span>Back</span>
+          </button>
         </div>
       </div>
     </div>
@@ -115,6 +169,10 @@
       </div>
       <div id="damage-flash"></div>
       <div id="kill-feed"></div>
+      <div id="stamina-bar" class="hidden" aria-hidden="true">
+        <div class="stamina-label">STAMINA</div>
+        <div class="stamina-track"><div id="stamina-fill"></div></div>
+      </div>
       <div id="hud-bottom">
         <div id="hud-hp-wrap"><span class="label">HP</span> <span id="hud-hp">200</span></div>
         <div id="hud-center">
@@ -124,19 +182,7 @@
         </div>
         <div id="hud-ammo-wrap"><span class="label">AMMO</span> <span id="hud-ammo">30 / 30</span></div>
       </div>
-      <div id="ability-bars">
-        <div class="ability-slot" id="ab1-slot">
-          <div class="ability-label" id="ab1-label">1</div>
-          <div class="ability-track"><div class="ability-fill" id="ab1-fill"></div></div>
-          <div class="ability-cd" id="ab1-cd">READY</div>
-        </div>
-        <div class="ability-slot" id="ab2-slot">
-          <div class="ability-label" id="ab2-label">2</div>
-          <div class="ability-track"><div class="ability-fill" id="ab2-fill"></div></div>
-          <div class="ability-cd" id="ab2-cd">READY</div>
-        </div>
-      </div>
-      <div id="gun-ladder" class="hidden">
+      <div id="gun-ladder">
         <div id="gun-ladder-title">GUN GAME</div>
         <div id="gun-ladder-level">1 / 20</div>
         <div id="gun-ladder-weapon">Pea Shooter</div>
@@ -146,7 +192,7 @@
       <div id="scoreboard">
         <table>
           <thead>
-            <tr><th>Team</th><th>Player</th><th>Class</th><th>K</th><th>D</th></tr>
+            <tr><th>Team</th><th>Player</th><th>Weapon</th><th>K</th><th>D</th></tr>
           </thead>
           <tbody id="scoreboard-body"></tbody>
         </table>

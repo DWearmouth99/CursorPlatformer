@@ -27,15 +27,21 @@ export function bindPauseMenu(handlers: PauseHandlers) {
   const sensVal = document.getElementById("setting-sens-val")!;
   const volSlider = document.getElementById("setting-vol") as HTMLInputElement;
   const volVal = document.getElementById("setting-vol-val")!;
+  const musicSlider = document.getElementById(
+    "setting-music",
+  ) as HTMLInputElement;
+  const musicVal = document.getElementById("setting-music-val")!;
 
   let open = false;
   let settings = loadSettings();
 
   function syncSliders(): void {
     sensSlider.value = String(settings.mouseSens);
-    sensVal.textContent = `${settings.mouseSens.toFixed(2)}×`;
+    sensVal.textContent = `${settings.mouseSens.toFixed(2)}x`;
     volSlider.value = String(settings.volume);
     volVal.textContent = `${Math.round(settings.volume * 100)}%`;
+    musicSlider.value = String(settings.musicVolume);
+    musicVal.textContent = `${Math.round(settings.musicVolume * 100)}%`;
   }
 
   function showMain(): void {
@@ -85,7 +91,7 @@ export function bindPauseMenu(handlers: PauseHandlers) {
       ...settings,
       mouseSens: Number(sensSlider.value),
     };
-    sensVal.textContent = `${settings.mouseSens.toFixed(2)}×`;
+    sensVal.textContent = `${settings.mouseSens.toFixed(2)}x`;
     saveSettings(settings);
     handlers.onSettingsChange(settings);
   });
@@ -100,7 +106,16 @@ export function bindPauseMenu(handlers: PauseHandlers) {
     handlers.onSettingsChange(settings);
   });
 
-  // Don't click through to the canvas unlock overlay
+  musicSlider.addEventListener("input", () => {
+    settings = {
+      ...settings,
+      musicVolume: Number(musicSlider.value),
+    };
+    musicVal.textContent = `${Math.round(settings.musicVolume * 100)}%`;
+    saveSettings(settings);
+    handlers.onSettingsChange(settings);
+  });
+
   root.addEventListener("click", (e) => e.stopPropagation());
 
   return {

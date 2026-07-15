@@ -7,11 +7,8 @@ import {
   ACTIVE_ARENA_FILE,
   TICK_MS,
   buildArena,
-  isClassId,
-  isGameMode,
   setActiveLevel,
   type ClientMsg,
-  type GameMode,
   type LevelFile,
 } from "@fps/shared";
 import { createLobby, type Lobby, type NetPlayer } from "./lobby.js";
@@ -47,19 +44,13 @@ const arena = buildArena();
 let nextId = 1;
 const allocId = () => String(nextId++);
 
-/** Completely separate lobbies — Ability Arena vs Gun Game never share players. */
-const lobbies: Record<GameMode, Lobby> = {
-  ability: createLobby("ability", arena.solids, allocId),
-  gun_game: createLobby("gun_game", arena.solids, allocId),
-};
+const lobby = createLobby("gun_game", arena.solids, allocId);
 
 type Session = { lobby: Lobby; player: NetPlayer };
 
 function findSession(ws: WebSocket): Session | null {
-  for (const lobby of Object.values(lobbies)) {
-    const player = lobby.findByWs(ws);
-    if (player) return { lobby, player };
-  }
+  const player = lobby.findByWs(ws);
+  if (player) return { lobby, player };
   return null;
 }
 
@@ -74,12 +65,9 @@ function onMessage(ws: WebSocket, session: Session | null, raw: string): void {
 
   if (msg.type === "join") {
     if (session) return;
-    const classId = isClassId(msg.classId) ? msg.classId : "frostbinder";
-    const mode: GameMode = isGameMode(msg.mode) ? msg.mode : "ability";
-    const lobby = lobbies[mode];
-    const player = lobby.spawnPlayer(ws, classId);
+    const player = lobby.spawnPlayer(ws);
     console.log(
-      `[server] routed ${player.id} → ${mode} (ability=${lobbies.ability.players.size} gun=${lobbies.gun_game.players.size})`,
+      `[server] joined gun_game as ${player.id} (players=${lobby.players.size})`,
     );
     return;
   }
@@ -97,9 +85,7 @@ function onWsConnection(ws: WebSocket): void {
   });
 
   ws.on("close", () => {
-    for (const lobby of Object.values(lobbies)) {
-      lobby.removeByWs(ws);
-    }
+    lobby.removeByWs(ws);
   });
 }
 
@@ -169,13 +155,12 @@ const wss = new WebSocketServer({ server: httpServer });
 wss.on("connection", onWsConnection);
 
 setInterval(() => {
-  lobbies.ability.tickOnce();
-  lobbies.gun_game.tickOnce();
+  lobby.tickOnce();
 }, TICK_MS);
 
 httpServer.listen(PORT, () => {
   const hasClient = fs.existsSync(path.join(CLIENT_DIST, "index.html"));
   console.log(
-    `[server] listening on :${PORT} (ability + gun_game lobbies${hasClient ? "" : ", client/dist missing"})`,
+    `[server] listening on :${PORT} (gun game${hasClient ? "" : ", client/dist missing"})`,
   );
 });

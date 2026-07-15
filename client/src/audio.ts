@@ -4,12 +4,21 @@
 export function createAudio() {
   let ctx: AudioContext | null = null;
   let master: GainNode | null = null;
-  let volume = 0.85;
+  let musicBus: GainNode | null = null;
+  let volume = 0.6;
+  let musicVolume = 0.02;
   let hitmarkerBuf: AudioBuffer | null = null;
   let reloadBuf: AudioBuffer | null = null;
+  let musicBuf: AudioBuffer | null = null;
+  let walkBuf: AudioBuffer | null = null;
   let samplesLoading: Promise<void> | null = null;
   let reloadSource: AudioBufferSourceNode | null = null;
   let reloadGain: GainNode | null = null;
+  let musicSource: AudioBufferSourceNode | null = null;
+  let walkSource: AudioBufferSourceNode | null = null;
+  let walkGain: GainNode | null = null;
+  let musicWanted = false;
+  let walkWanted = false;
 
   function ensure(): AudioContext | null {
     if (typeof AudioContext === "undefined") return null;
@@ -18,6 +27,9 @@ export function createAudio() {
       master = ctx.createGain();
       master.gain.value = volume;
       master.connect(ctx.destination);
+      musicBus = ctx.createGain();
+      musicBus.gain.value = musicVolume;
+      musicBus.connect(ctx.destination);
     }
     if (ctx.state === "suspended") void ctx.resume();
     return ctx;
@@ -43,6 +55,14 @@ export function createAudio() {
     if (!reloadBuf) {
       reloadBuf = await loadOne("/soundeffects/reload.mp3");
     }
+    if (!musicBuf) {
+      musicBuf = await loadOne("/soundeffects/backgroundmusic.mp3");
+    }
+    if (!walkBuf) {
+      walkBuf = await loadOne("/soundeffects/walking.mp3");
+    }
+    if (musicWanted) startMusicInternal();
+    if (walkWanted) startWalkInternal();
   }
 
   function unlock(): void {
@@ -54,6 +74,12 @@ export function createAudio() {
     volume = Math.max(0, Math.min(1, v));
     ensure();
     if (master) master.gain.value = volume;
+  }
+
+  function setMusicVolume(v: number): void {
+    musicVolume = Math.max(0, Math.min(1, v));
+    ensure();
+    if (musicBus) musicBus.gain.value = musicVolume;
   }
 
   function playBuffer(
@@ -84,6 +110,93 @@ export function createAudio() {
       reloadSource = null;
     }
     reloadGain = null;
+  }
+
+  function startMusicInternal(): void {
+    const ac = ensure();
+    if (!ac || !musicBus || !musicBuf || musicSource) return;
+    const src = ac.createBufferSource();
+    src.buffer = musicBuf;
+    src.loop = true;
+    src.connect(musicBus);
+    src.start();
+    musicSource = src;
+  }
+
+  function startMusic(): void {
+    musicWanted = true;
+    unlock();
+    void (samplesLoading ?? loadSamples()).then(() => startMusicInternal());
+  }
+
+  function stopMusic(): void {
+    musicWanted = false;
+    if (musicSource) {
+      try {
+        musicSource.stop();
+      } catch {
+        /* already stopped */
+      }
+      musicSource = null;
+    }
+  }
+
+  let walkRate = 1;
+  let walkRateSmoothed = 1;
+
+  function startWalkInternal(): void {
+    const ac = ensure();
+    if (!ac || !master || !walkBuf || walkSource) return;
+    const src = ac.createBufferSource();
+    const g = ac.createGain();
+    src.buffer = walkBuf;
+    src.loop = true;
+    src.playbackRate.value = walkRateSmoothed;
+    g.gain.value = 0.5;
+    src.connect(g);
+    g.connect(master);
+    src.start();
+    walkSource = src;
+    walkGain = g;
+  }
+
+  /**
+   * Loop walking.mp3 while active. `playbackRate` scales with speed / sprint.
+   * Rate is smoothed so walk→sprint doesn't click.
+   */
+  function setWalking(active: boolean, playbackRate = 1): void {
+    walkRate = Math.max(0.7, Math.min(2.2, playbackRate));
+    if (active) {
+      walkWanted = true;
+      walkRateSmoothed += (walkRate - walkRateSmoothed) * 0.18;
+      if (walkSource) {
+        walkSource.playbackRate.value = walkRateSmoothed;
+        if (walkGain) {
+          const ac = ensure();
+          if (ac) {
+            const g = 0.42 + Math.min(0.28, (walkRateSmoothed - 1) * 0.35);
+            walkGain.gain.setTargetAtTime(g, ac.currentTime, 0.05);
+          }
+        }
+        return;
+      }
+      unlock();
+      void (samplesLoading ?? loadSamples()).then(() => {
+        if (walkWanted) startWalkInternal();
+      });
+      return;
+    }
+    walkWanted = false;
+    walkRateSmoothed = 1;
+    if (walkSource) {
+      try {
+        walkSource.stop();
+      } catch {
+        /* already stopped */
+      }
+      walkSource = null;
+      walkGain = null;
+    }
   }
 
   function tone(
@@ -181,7 +294,6 @@ export function createAudio() {
       src.buffer = reloadBuf;
       const sampleLen = reloadBuf.duration;
       const want = Math.max(0.35, durationMs / 1000);
-      // Stretch/compress mildly so it covers the weapon reload window
       src.playbackRate.value = Math.max(0.75, Math.min(1.6, sampleLen / want));
       const playFor = sampleLen / src.playbackRate.value;
       const t0 = ac.currentTime;
@@ -201,23 +313,23 @@ export function createAudio() {
 
   function death(): void {
     stopReload();
+    setWalking(false);
     tone(200, 0.25, "sawtooth", 0.08, 50);
     noiseBurst(0.3, 0.07, 300);
-  }
-
-  function footstep(): void {
-    noiseBurst(0.04, 0.035, 250);
   }
 
   return {
     unlock,
     setVolume,
+    setMusicVolume,
+    startMusic,
+    stopMusic,
+    setWalking,
     shoot,
     hitConfirm,
     hurt,
     reload,
     stopReload,
     death,
-    footstep,
   };
 }

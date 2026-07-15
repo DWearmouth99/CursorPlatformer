@@ -102,7 +102,7 @@ export const MODEL_CATALOG: ModelInfo[] = [
     id: "stone.02",
     label: "Rock M",
     defaultScale: 2.4,
-    solidDefault: true,
+    solidDefault: false,
     height: 0.21,
     footprint: [0.35, 0.35],
     category: "cover",
@@ -111,7 +111,7 @@ export const MODEL_CATALOG: ModelInfo[] = [
     id: "stone.03",
     label: "Rock L",
     defaultScale: 2.8,
-    solidDefault: true,
+    solidDefault: false,
     height: 0.36,
     footprint: [0.55, 0.5],
     category: "cover",
@@ -147,7 +147,7 @@ export const MODEL_CATALOG: ModelInfo[] = [
     id: "mushroom.01",
     label: "Mushroom",
     defaultScale: 1.8,
-    solidDefault: true,
+    solidDefault: false,
     height: 0.21,
     footprint: [0.23, 0.23],
     category: "nature",
@@ -158,6 +158,15 @@ const byId = new Map(MODEL_CATALOG.map((m) => [m.id, m]));
 
 export function getModelInfo(id: string): ModelInfo | undefined {
   return byId.get(id);
+}
+
+/** Mushrooms / rocks are visual-only — never collide. */
+export function isNonSolidModel(model: string): boolean {
+  return (
+    model.startsWith("mushroom") ||
+    model.startsWith("stone") ||
+    model.startsWith("rock")
+  );
 }
 
 /** Auto AABB size from catalog (y = bottom of model). */

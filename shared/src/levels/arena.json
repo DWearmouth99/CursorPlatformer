@@ -69,12 +69,7 @@
       "z": 24,
       "yaw": 0,
       "scale": 2.4,
-      "solid": true,
-      "collider": {
-        "sx": 1.512,
-        "sy": 1.764,
-        "sz": 1.512
-      }
+      "solid": false
     },
     {
       "model": "stone.02",
@@ -83,12 +78,7 @@
       "z": -24,
       "yaw": 0,
       "scale": 2.4,
-      "solid": true,
-      "collider": {
-        "sx": 1.512,
-        "sy": 1.764,
-        "sz": 1.512
-      }
+      "solid": false
     },
     {
       "model": "stone.02",
@@ -97,12 +87,7 @@
       "z": 18,
       "yaw": 0,
       "scale": 2.4,
-      "solid": true,
-      "collider": {
-        "sx": 1.512,
-        "sy": 1.764,
-        "sz": 1.512
-      }
+      "solid": false
     },
     {
       "model": "stone.02",
@@ -111,12 +96,7 @@
       "z": -6,
       "yaw": 0,
       "scale": 2.4,
-      "solid": true,
-      "collider": {
-        "sx": 1.512,
-        "sy": 1.764,
-        "sz": 1.512
-      }
+      "solid": false
     },
     {
       "model": "stone.02",
@@ -125,12 +105,7 @@
       "z": -28,
       "yaw": 0,
       "scale": 2.4,
-      "solid": true,
-      "collider": {
-        "sx": 1.512,
-        "sy": 1.764,
-        "sz": 1.512
-      }
+      "solid": false
     },
     {
       "model": "tree.01",
