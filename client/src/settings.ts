@@ -4,10 +4,12 @@ export type GameSettings = {
   volume: number;
   /** Background music volume 0–1. */
   musicVolume: number;
+  /** Request browser fullscreen when entering play. */
+  fullscreen: boolean;
 };
 
-/** Bump when audio defaults change so refresh picks up latest loudness. */
-const KEY = "cursorfps_settings_v5";
+/** Bump when defaults / schema change so refresh picks up new fields. */
+const KEY = "cursorfps_settings_v6";
 
 /**
  * Latest agreed defaults (music quieter, SFX a bit softer for footsteps mix).
@@ -17,23 +19,21 @@ const DEFAULTS: GameSettings = {
   mouseSens: 1,
   volume: 0.55,
   musicVolume: 0.018,
+  fullscreen: false,
 };
 
 export function loadSettings(): GameSettings {
   try {
     const raw =
       localStorage.getItem(KEY) ??
+      localStorage.getItem("cursorfps_settings_v5") ??
       localStorage.getItem("cursorfps_settings_v3") ??
       localStorage.getItem("cursorfps_settings_v1");
     if (!raw) return { ...DEFAULTS };
 
-    const parsed = JSON.parse(raw) as Partial<GameSettings> & {
-      _key?: string;
-    };
+    const parsed = JSON.parse(raw) as Partial<GameSettings>;
     const fromLatest = !!localStorage.getItem(KEY);
 
-    // Fresh key: use saved slider values. Older keys: adopt new audio defaults
-    // but keep mouse sens from the previous save.
     const settings: GameSettings = {
       mouseSens: clamp(
         Number(parsed.mouseSens ?? DEFAULTS.mouseSens),
@@ -46,9 +46,12 @@ export function loadSettings(): GameSettings {
       musicVolume: fromLatest
         ? clamp(Number(parsed.musicVolume ?? DEFAULTS.musicVolume), 0, 1)
         : DEFAULTS.musicVolume,
+      fullscreen:
+        typeof parsed.fullscreen === "boolean"
+          ? parsed.fullscreen
+          : DEFAULTS.fullscreen,
     };
 
-    // Migrate older saves onto the new key immediately.
     if (!fromLatest) saveSettings(settings);
     return settings;
   } catch {

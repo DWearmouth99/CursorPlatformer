@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Exo+2:wght@500;600;700;800&family=Press+Start+2P&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/src/style.css" />
@@ -58,6 +58,13 @@
             <div class="menu-setting-row">
               <input id="menu-setting-music" type="range" min="0" max="1" step="0.05" />
               <b id="menu-setting-music-val">2%</b>
+            </div>
+          </label>
+          <label class="menu-setting menu-setting-toggle">
+            <span>Fullscreen</span>
+            <div class="menu-setting-row">
+              <input id="menu-setting-fullscreen" type="checkbox" />
+              <b id="menu-setting-fullscreen-val">Off</b>
             </div>
           </label>
           <button type="button" id="menu-settings-back" class="wood-btn wood-btn-sm">
@@ -120,6 +127,13 @@
               <b id="setting-music-val">2%</b>
             </div>
           </label>
+          <label class="menu-setting menu-setting-toggle">
+            <span>Fullscreen</span>
+            <div class="menu-setting-row">
+              <input id="setting-fullscreen" type="checkbox" />
+              <b id="setting-fullscreen-val">Off</b>
+            </div>
+          </label>
           <button type="button" id="pause-settings-back" class="wood-btn wood-btn-sm">
             <span>Back</span>
           </button>
@@ -128,10 +142,11 @@
     </div>
 
     <div id="overlay" class="hidden">
-      <div class="panel">
-        <h1>Cursor FPS</h1>
-        <p id="overlay-hint">Connecting…</p>
-        <p class="hint">Click to play (enters fullscreen) · Esc pauses</p>
+      <div class="overlay-card">
+        <p class="overlay-kicker">Arena</p>
+        <h1 class="overlay-title">Cursor FPS</h1>
+        <p id="overlay-hint" class="overlay-hint">Connecting…</p>
+        <p class="overlay-sub">Click to play · Esc pauses · Tab scoreboard</p>
       </div>
     </div>
 
@@ -154,6 +169,7 @@
           <span class="sr-dot"></span>
         </div>
       </div>
+
       <div id="crosshair" aria-hidden="true">
         <span class="ch ch-n"></span>
         <span class="ch ch-s"></span>
@@ -168,35 +184,80 @@
         <span class="hm hm-br"></span>
       </div>
       <div id="damage-flash"></div>
-      <div id="kill-feed"></div>
-      <div id="stamina-bar" class="hidden" aria-hidden="true">
-        <div class="stamina-label">STAMINA</div>
-        <div class="stamina-track"><div id="stamina-fill"></div></div>
-      </div>
-      <div id="hud-bottom">
-        <div id="hud-hp-wrap"><span class="label">HP</span> <span id="hud-hp">200</span></div>
-        <div id="hud-center">
-          <div id="hud-class"></div>
-          <div id="hud-weapon"></div>
-          <div id="hud-status" class="hidden"></div>
+
+      <div id="hud-top">
+        <div id="hud-hp-panel" class="hud-chip">
+          <div class="hp-top">
+            <span class="hp-label">Health</span>
+            <span id="hud-hp">200</span>
+          </div>
+          <div class="hp-track"><div id="hud-hp-fill"></div></div>
         </div>
-        <div id="hud-ammo-wrap"><span class="label">AMMO</span> <span id="hud-ammo">30 / 30</span></div>
+
+        <div id="gun-ladder" class="hud-chip">
+          <div class="gun-ladder-head">
+            <span id="gun-ladder-title">Gun Game</span>
+            <span id="gun-ladder-level">1 / —</span>
+          </div>
+          <div id="gun-ladder-weapon">Pea Shooter</div>
+          <div id="gun-ladder-next">Next: Rubber Chicken</div>
+          <div class="gun-ladder-track">
+            <div id="gun-ladder-fill"></div>
+          </div>
+        </div>
+
+        <div id="kill-feed" aria-live="polite"></div>
       </div>
-      <div id="gun-ladder">
-        <div id="gun-ladder-title">GUN GAME</div>
-        <div id="gun-ladder-level">1 / —</div>
-        <div id="gun-ladder-weapon">Pea Shooter</div>
-        <div id="gun-ladder-next">Next: Rubber Chicken</div>
+
+      <div id="stamina-bar" class="hidden" aria-hidden="true">
+        <div class="stamina-track"><div id="stamina-fill"></div></div>
+        <div class="stamina-label">Stamina</div>
       </div>
-      <div id="respawn-msg">Respawning…</div>
+
+      <div id="hud-bottom">
+        <div id="hud-status" class="hidden"></div>
+        <div id="hud-ammo-panel" class="hud-chip">
+          <div class="ammo-label">Ammo</div>
+          <div class="ammo-row">
+            <span id="hud-ammo">30</span><span class="ammo-sep">/</span><span id="hud-mag">30</span>
+          </div>
+          <div id="hud-weapon">Pea Shooter</div>
+        </div>
+      </div>
+
+      <!-- Kept for API compatibility; left empty in gun game -->
+      <div id="hud-class" class="hidden" hidden></div>
+
+      <div id="respawn-msg">
+        <div class="death-card">
+          <p class="death-kicker">Eliminated</p>
+          <p class="death-title">Respawning</p>
+          <p class="death-sub">Hold tight — next life inbound</p>
+        </div>
+      </div>
+
       <div id="scoreboard">
-        <table>
-          <thead>
-            <tr><th>Team</th><th>Player</th><th>Weapon</th><th>K</th><th>D</th></tr>
-          </thead>
-          <tbody id="scoreboard-body"></tbody>
-        </table>
+        <div class="scoreboard-card">
+          <div class="scoreboard-head">
+            <span class="scoreboard-kicker">Match</span>
+            <h2 class="scoreboard-title">Leaderboard</h2>
+            <p class="scoreboard-hint">Hold Tab</p>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th class="col-rank">#</th>
+                <th class="col-player">Player</th>
+                <th class="col-gun">Gun</th>
+                <th class="col-stat">K</th>
+                <th class="col-stat">D</th>
+              </tr>
+            </thead>
+            <tbody id="scoreboard-body"></tbody>
+          </table>
+        </div>
       </div>
+
       <div id="debug"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>

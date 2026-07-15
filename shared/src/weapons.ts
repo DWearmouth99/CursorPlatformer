@@ -46,6 +46,20 @@ export type WeaponDef = {
   viewmodel?: string;
   /** Require a fresh click per shot (pistols). Hold-to-spray if false/omitted. */
   semiAuto?: boolean;
+  /**
+   * High-level fire mode. When omitted, inferred from other flags
+   * (meleeCone / explosionRadius / pellets / semiAuto).
+   */
+  fireStyle?:
+    | "auto"
+    | "semi"
+    | "burst"
+    | "shotgun"
+    | "melee"
+    | "splash"
+    | "rocket";
+  /** Rounds per burst when `fireStyle === "burst"`. */
+  burstCount?: number;
   /** Splash damage radius (meters) at the impact point (rockets / meme blasts). */
   explosionRadius?: number;
   /** Client projectile / impact presentation. */
@@ -57,7 +71,43 @@ export type WeaponDef = {
   onHit?: "slip" | "freeze" | "shrink" | "shock";
   /** Duration of `onHit` in ms. */
   onHitMs?: number;
+  /** Viewmodel shoot pose driver (procedural guns). */
+  animProfile?: WeaponAnimProfile;
+  /** Procedural shoot SFX bucket. */
+  sfx?: WeaponSfx;
+  /** Extra yaw kick on viewmodel (radians scale). */
+  vmKickYaw?: number;
+  /** Extra roll kick on viewmodel. */
+  vmKickRoll?: number;
+  /** Emit a small shell-eject spark on shot. */
+  shellEject?: boolean;
 };
+
+export type WeaponAnimProfile =
+  | "kick"
+  | "punch"
+  | "pump"
+  | "bolt"
+  | "spin"
+  | "spray"
+  | "slash"
+  | "slam"
+  | "toss";
+
+export type WeaponSfx =
+  | "pea"
+  | "chicken"
+  | "wet"
+  | "zap"
+  | "smg"
+  | "shotty"
+  | "rifle"
+  | "sniper"
+  | "rocket"
+  | "melee"
+  | "slap"
+  | "heavy"
+  | "burst";
 
 export type WeaponShape =
   | "rifle"

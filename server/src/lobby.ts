@@ -18,6 +18,7 @@ import {
   gunGameWeapon,
   lagCompRewindTicks,
   meleeConeHits,
+  resolveFireStyle,
   pickFfaSpawn,
   serverHitscan,
   spreadAngles,
@@ -34,17 +35,22 @@ import {
   type Team,
   type WeaponDef,
 } from "@fps/shared";
+import { forgetBotMind, thinkBot } from "./bots.js";
 
 const RESPAWN_TICKS = Math.round((RESPAWN_MS / 1000) * TICK_RATE);
 const INPUT_QUEUE_MAX = 12;
 const HISTORY_MAX = Math.ceil(350 / TICK_MS);
 const DUMMY_CLASS: ClassId = "frostbinder";
+/** Up to 3 filler bots; seats shrink as extra humans join. */
+const BOT_SLOT_NAMES = ["Bot-1", "Bot-2", "Bot-3"] as const;
 
 export type NetPlayer = {
   id: string;
   team: Team;
   classId: ClassId;
-  ws: WebSocket;
+  /** Null for AI bots. */
+  ws: WebSocket | null;
+  isBot: boolean;
   state: PlayerMoveState;
   hp: number;
   alive: boolean;
@@ -64,12 +70,16 @@ export type NetPlayer = {
   lean: number;
   status: PlayerStatus;
   gunLevel: number;
+  /** Client-reported RTT (ms) for lag-comp rewind. */
+  smoothedRttMs: number;
+  /** Shots left in current burst (procedural burst weapons). */
+  burstRemaining: number;
+  burstNextTick: number;
 };
 
-function send(ws: WebSocket, msg: ServerMsg): void {
-  if (ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(msg));
-  }
+function send(ws: WebSocket | null, msg: ServerMsg): void {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify(msg));
 }
 
 export type Lobby = {
@@ -80,6 +90,8 @@ export type Lobby = {
   handleMessage: (player: NetPlayer, msg: ClientMsg) => void;
   findByWs: (ws: WebSocket) => NetPlayer | null;
   removeByWs: (ws: WebSocket) => void;
+  /** Keep bot count filled for solo / small lobbies. */
+  syncBots: () => void;
 };
 
 export function createLobby(
@@ -107,13 +119,102 @@ export function createLobby(
       p.deaths = 0;
     }
     console.log(`[lobby:${mode}] new round`);
+    syncBots();
   }
 
   function broadcast(msg: ServerMsg, exceptId?: string): void {
     const raw = JSON.stringify(msg);
     for (const p of players.values()) {
       if (exceptId && p.id === exceptId) continue;
-      if (p.ws.readyState === WebSocket.OPEN) p.ws.send(raw);
+      if (!p.ws || p.ws.readyState !== WebSocket.OPEN) continue;
+      p.ws.send(raw);
+    }
+  }
+
+  function humanCount(): number {
+    let n = 0;
+    for (const p of players.values()) if (!p.isBot) n += 1;
+    return n;
+  }
+
+  function desiredBotCount(): number {
+    const humans = humanCount();
+    if (humans === 0) return 0;
+    // Solo: 3 bots. Each extra human replaces one bot seat.
+    return Math.min(3, Math.max(0, 4 - humans));
+  }
+
+  function makePlayer(
+    id: string,
+    team: Team,
+    ws: WebSocket | null,
+    isBot: boolean,
+  ): NetPlayer {
+    const starterAmmo = gunGameWeapon(0).magSize;
+    return {
+      id,
+      team,
+      classId: DUMMY_CLASS,
+      ws,
+      isBot,
+      state: assignSpawn(team, id),
+      hp: MAX_HP,
+      alive: true,
+      ammo: starterAmmo,
+      reloading: false,
+      reloadDoneTick: 0,
+      lastFireTick: -999,
+      sprayIndex: 0,
+      fireHeld: false,
+      reloadHeld: false,
+      kills: 0,
+      deaths: 0,
+      respawnTick: 0,
+      lastProcessedSeq: 0,
+      inputQueue: [],
+      lastButtons: 0,
+      lean: 0,
+      status: emptyStatus(),
+      gunLevel: 0,
+      smoothedRttMs: 120,
+      burstRemaining: 0,
+      burstNextTick: 0,
+    };
+  }
+
+  function removeBot(id: string): void {
+    const p = players.get(id);
+    if (!p?.isBot) return;
+    players.delete(id);
+    forgetBotMind(id);
+    broadcast({ type: "playerLeft", playerId: id });
+    console.log(`[lobby:${mode}] bot leave ${id} players=${players.size}`);
+  }
+
+  function spawnBot(id: string): NetPlayer {
+    const team = pickTeam();
+    const bot = makePlayer(id, team, null, true);
+    players.set(id, bot);
+    broadcast({ type: "playerJoined", player: toSnapshot(bot) });
+    console.log(
+      `[lobby:${mode}] bot join ${id} team=${team} players=${players.size}`,
+    );
+    return bot;
+  }
+
+  function syncBots(): void {
+    const desired = desiredBotCount();
+    const bots = [...players.values()].filter((p) => p.isBot);
+
+    while (bots.length > desired) {
+      const doomed = bots.pop()!;
+      removeBot(doomed.id);
+    }
+
+    for (const name of BOT_SLOT_NAMES) {
+      if ([...players.values()].filter((p) => p.isBot).length >= desired) break;
+      if (players.has(name)) continue;
+      spawnBot(name);
     }
   }
 
@@ -137,9 +238,21 @@ export function createLobby(
         victim.status.slowUntil = Math.max(victim.status.slowUntil, until);
         break;
       case "freeze":
-      case "shock":
         victim.status.frozenUntil = Math.max(victim.status.frozenUntil, until);
         break;
+      case "shock": {
+        // Brief stun + stumble (distinct from full freeze)
+        const shockTicks = Math.max(
+          1,
+          Math.round(((Math.min(ms, 500) / 1000) * TICK_RATE) / 1),
+        );
+        victim.status.frozenUntil = Math.max(
+          victim.status.frozenUntil,
+          tick + shockTicks,
+        );
+        victim.status.slowUntil = Math.max(victim.status.slowUntil, until);
+        break;
+      }
       case "shrink":
         victim.status.shrinkUntil = Math.max(victim.status.shrinkUntil, until);
         break;
@@ -244,7 +357,28 @@ export function createLobby(
       position: p.state.position,
       crouching: p.state.crouching,
       alive: p.alive,
+      scale: tick < p.status.shrinkUntil ? 0.45 : 1,
     }));
+  }
+
+  /**
+   * Victim poses as the shooter saw them (interpolated), plus neighbors along
+   * the path so strafing targets don't slip between discrete ticks.
+   */
+  function posesForHitscan(shooter: NetPlayer) {
+    const rttMs = Math.max(40, Math.min(280, shooter.smoothedRttMs || 120));
+    const rewind = lagCompRewindTicks(TICK_MS, rttMs);
+    const t = tick - rewind;
+    const fallback =
+      poseHistory.length > 0
+        ? poseHistory[poseHistory.length - 1]!.poses
+        : currentPoses();
+    // Center = aim-time pose; ±0.75 tick covers interp segment / fast strafe
+    return [
+      ...getPlayerPoseAtTime(t - 0.75, poseHistory, fallback),
+      ...getPlayerPoseAtTime(t, poseHistory, fallback),
+      ...getPlayerPoseAtTime(t + 0.75, poseHistory, fallback),
+    ];
   }
 
   function onGunGameKill(shooter: NetPlayer): void {
@@ -313,14 +447,36 @@ export function createLobby(
   function tryFire(shooter: NetPlayer, fireEdge: boolean): void {
     const weapon = weaponOf(shooter);
     const fireCooldown = Math.max(1, Math.round(TICK_RATE / weapon.fireRate));
+    const style = resolveFireStyle(weapon);
+    const isBurst = style === "burst";
     if (!shooter.alive || shooter.reloading) return;
-    if (shooter.ammo <= 0) return;
-    if (tick - shooter.lastFireTick < fireCooldown) return;
-    // Pistols / AWP / rockets: one shot per click
-    if (weapon.semiAuto && !fireEdge) return;
+    if (shooter.ammo <= 0) {
+      shooter.burstRemaining = 0;
+      tryReload(shooter);
+      return;
+    }
+
+    if (isBurst && shooter.burstRemaining > 0) {
+      if (tick < shooter.burstNextTick) return;
+    } else {
+      if (tick - shooter.lastFireTick < fireCooldown) return;
+      // Semi / burst: one click starts the action
+      if ((weapon.semiAuto || isBurst) && !fireEdge) return;
+      if (isBurst) {
+        shooter.burstRemaining = Math.min(
+          weapon.burstCount ?? 3,
+          shooter.ammo,
+        );
+      }
+    }
 
     shooter.lastFireTick = tick;
     shooter.ammo -= 1;
+    if (shooter.ammo <= 0) tryReload(shooter);
+    if (isBurst) {
+      shooter.burstRemaining = Math.max(0, shooter.burstRemaining - 1);
+      shooter.burstNextTick = tick + 2;
+    }
     shooter.sprayIndex = Math.min(
       shooter.sprayIndex + 1,
       weapon.recoilPattern.length - 1,
@@ -334,12 +490,7 @@ export function createLobby(
       baseYaw,
       shooter.lean,
     );
-    const rewind = lagCompRewindTicks(TICK_MS);
-    const poses = getPlayerPoseAtTime(
-      tick - rewind,
-      poseHistory,
-      currentPoses(),
-    );
+    const poses = posesForHitscan(shooter);
 
     const ads = bitsToButtons(shooter.lastButtons).ads;
     const spread = weapon.spreadDeg * (ads ? weapon.adsSpreadMult : 1);
@@ -369,7 +520,7 @@ export function createLobby(
       }
     };
 
-    if (weapon.meleeCone != null && weapon.maxRange != null) {
+    if (style === "melee" && weapon.meleeCone != null && weapon.maxRange != null) {
       const hits = meleeConeHits(
         origin,
         baseYaw,
@@ -404,7 +555,11 @@ export function createLobby(
           applyHit,
         );
       }
-    } else if (weapon.explosionRadius != null && weapon.explosionRadius > 0) {
+    } else if (
+      (style === "splash" || style === "rocket") &&
+      weapon.explosionRadius != null &&
+      weapon.explosionRadius > 0
+    ) {
       // Rocket / potato / thunder: hitscan then splash at impact.
       const { end } = serverHitscan(
         origin,
@@ -424,7 +579,9 @@ export function createLobby(
         applyHit,
       );
     } else {
-      for (let pellet = 0; pellet < weapon.pellets; pellet++) {
+      // auto / semi / burst / shotgun — pelleted hitscan
+      const pelletCount = style === "shotgun" ? weapon.pellets : Math.max(1, weapon.pellets);
+      for (let pellet = 0; pellet < pelletCount; pellet++) {
         const aim = spreadAngles(
           baseYaw,
           basePitch,
@@ -569,7 +726,8 @@ export function createLobby(
         }
       : buttons;
 
-    applyMovement(p.state, moveButtons, TICK_DT, solids, speedOf(p));
+    const moveSpeed = speedOf(p) * (p.isBot ? 0.72 : 1);
+    applyMovement(p.state, moveButtons, TICK_DT, solids, moveSpeed);
 
     const fireEdge = buttons.fire && !p.fireHeld;
     const reloadEdge = buttons.reload && !p.reloadHeld;
@@ -579,7 +737,8 @@ export function createLobby(
     if (!buttons.fire) p.sprayIndex = 0;
 
     if (reloadEdge) tryReload(p);
-    if (buttons.fire && !p.reloading) {
+    // Continue burst even if fire is released mid-burst
+    if ((buttons.fire || p.burstRemaining > 0) && !p.reloading) {
       tryFire(p, fireEdge);
     }
   }
@@ -593,6 +752,11 @@ export function createLobby(
 
     const frozen = gunGameWinnerId != null;
     if (!frozen) {
+      const roster = [...players.values()];
+      for (const p of roster) {
+        if (!p.isBot) continue;
+        thinkBot(p, roster, tick);
+      }
       for (const p of players.values()) {
         simulatePlayer(p);
       }
@@ -603,6 +767,7 @@ export function createLobby(
 
     const all = [...players.values()].map(toSnapshot);
     for (const p of players.values()) {
+      if (p.isBot || !p.ws) continue;
       send(p.ws, {
         type: "snapshot",
         tick,
@@ -616,37 +781,15 @@ export function createLobby(
   function spawnPlayer(ws: WebSocket): NetPlayer {
     const id = allocId();
     const team = pickTeam();
-    const starterAmmo = gunGameWeapon(0).magSize;
-    const player: NetPlayer = {
-      id,
-      team,
-      classId: DUMMY_CLASS,
-      ws,
-      state: assignSpawn(team, id),
-      hp: MAX_HP,
-      alive: true,
-      ammo: starterAmmo,
-      reloading: false,
-      reloadDoneTick: 0,
-      lastFireTick: -999,
-      sprayIndex: 0,
-      fireHeld: false,
-      reloadHeld: false,
-      kills: 0,
-      deaths: 0,
-      respawnTick: 0,
-      lastProcessedSeq: 0,
-      inputQueue: [],
-      lastButtons: 0,
-      lean: 0,
-      status: emptyStatus(),
-      gunLevel: 0,
-    };
+    const player = makePlayer(id, team, ws, false);
     players.set(id, player);
 
     console.log(
       `[lobby:${mode}] join ${id} team=${team} players=${players.size}`,
     );
+
+    // Humans replace AI seats first so welcome sees the trimmed roster.
+    syncBots();
 
     send(ws, {
       type: "welcome",
@@ -671,6 +814,10 @@ export function createLobby(
     if (typeof msg.lean !== "number" || !Number.isFinite(msg.lean)) {
       msg.lean = 0;
     }
+    if (typeof msg.rttMs === "number" && Number.isFinite(msg.rttMs)) {
+      const sample = Math.max(20, Math.min(400, msg.rttMs));
+      player.smoothedRttMs = player.smoothedRttMs * 0.85 + sample * 0.15;
+    }
     const q = player.inputQueue;
     if (q.length > 0 && msg.seq <= q[q.length - 1]!.seq) return;
     q.push(msg);
@@ -689,10 +836,11 @@ export function createLobby(
       players.delete(id);
       broadcast({ type: "playerLeft", playerId: id });
       console.log(`[lobby:${mode}] leave ${id} players=${players.size}`);
-      if (players.size === 0) {
+      if (humanCount() === 0) {
         gunGameWinnerId = null;
         matchFreezeUntilTick = 0;
       }
+      syncBots();
       return;
     }
   }
@@ -705,5 +853,6 @@ export function createLobby(
     handleMessage,
     findByWs,
     removeByWs,
+    syncBots,
   };
 }

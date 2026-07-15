@@ -62,7 +62,7 @@ function specFor(weapon: WeaponDef, shape: WeaponShape): ViewmodelSpec | null {
     file: weapon.viewmodel,
     rotY: FACE_FORWARD_Y,
     length: LENGTH_BY_SHAPE[shape] ?? 0.55,
-    scale: shape === "melee" ? 0.85 : 1,
+    scale: shape === "melee" ? 0.72 : 0.88,
     hip: HIP_DEFAULT,
   };
 }

@@ -31,6 +31,10 @@ export function bindPauseMenu(handlers: PauseHandlers) {
     "setting-music",
   ) as HTMLInputElement;
   const musicVal = document.getElementById("setting-music-val")!;
+  const fullscreenCheck = document.getElementById(
+    "setting-fullscreen",
+  ) as HTMLInputElement;
+  const fullscreenVal = document.getElementById("setting-fullscreen-val")!;
 
   let open = false;
   let settings = loadSettings();
@@ -42,6 +46,8 @@ export function bindPauseMenu(handlers: PauseHandlers) {
     volVal.textContent = `${Math.round(settings.volume * 100)}%`;
     musicSlider.value = String(settings.musicVolume);
     musicVal.textContent = `${Math.round(settings.musicVolume * 100)}%`;
+    fullscreenCheck.checked = settings.fullscreen;
+    fullscreenVal.textContent = settings.fullscreen ? "On" : "Off";
   }
 
   function showMain(): void {
@@ -112,6 +118,16 @@ export function bindPauseMenu(handlers: PauseHandlers) {
       musicVolume: Number(musicSlider.value),
     };
     musicVal.textContent = `${Math.round(settings.musicVolume * 100)}%`;
+    saveSettings(settings);
+    handlers.onSettingsChange(settings);
+  });
+
+  fullscreenCheck.addEventListener("change", () => {
+    settings = {
+      ...settings,
+      fullscreen: fullscreenCheck.checked,
+    };
+    fullscreenVal.textContent = settings.fullscreen ? "On" : "Off";
     saveSettings(settings);
     handlers.onSettingsChange(settings);
   });

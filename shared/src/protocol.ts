@@ -84,6 +84,8 @@ export type InputCmd = {
   pitch: number;
   /** -1 left lean … +1 right lean. */
   lean: number;
+  /** Optional client-measured RTT for lag compensation (ms). */
+  rttMs?: number;
 };
 
 export type SnapshotPlayer = {

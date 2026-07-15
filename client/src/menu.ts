@@ -41,6 +41,10 @@ export function showMainMenu(
     "menu-setting-music",
   ) as HTMLInputElement;
   const musicVal = document.getElementById("menu-setting-music-val")!;
+  const fullscreenCheck = document.getElementById(
+    "menu-setting-fullscreen",
+  ) as HTMLInputElement;
+  const fullscreenVal = document.getElementById("menu-setting-fullscreen-val")!;
 
   let settings = loadSettings();
 
@@ -51,6 +55,8 @@ export function showMainMenu(
     volVal.textContent = `${Math.round(settings.volume * 100)}%`;
     musicSlider.value = String(settings.musicVolume);
     musicVal.textContent = `${Math.round(settings.musicVolume * 100)}%`;
+    fullscreenCheck.checked = settings.fullscreen;
+    fullscreenVal.textContent = settings.fullscreen ? "On" : "Off";
   }
 
   function showPanel(which: "home" | "settings" | "credits"): void {
@@ -82,6 +88,13 @@ export function showMainMenu(
   musicSlider.oninput = () => {
     settings = { ...settings, musicVolume: Number(musicSlider.value) };
     musicVal.textContent = `${Math.round(settings.musicVolume * 100)}%`;
+    saveSettings(settings);
+    onSettingsChange?.(settings);
+  };
+
+  fullscreenCheck.onchange = () => {
+    settings = { ...settings, fullscreen: fullscreenCheck.checked };
+    fullscreenVal.textContent = settings.fullscreen ? "On" : "Off";
     saveSettings(settings);
     onSettingsChange?.(settings);
   };

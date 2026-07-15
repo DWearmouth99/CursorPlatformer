@@ -11,6 +11,7 @@ export function createAudio() {
   let reloadBuf: AudioBuffer | null = null;
   let musicBuf: AudioBuffer | null = null;
   let walkBuf: AudioBuffer | null = null;
+  let jumpBuf: AudioBuffer | null = null;
   let samplesLoading: Promise<void> | null = null;
   let reloadSource: AudioBufferSourceNode | null = null;
   let reloadGain: GainNode | null = null;
@@ -60,6 +61,9 @@ export function createAudio() {
     }
     if (!walkBuf) {
       walkBuf = await loadOne("/soundeffects/walking.mp3");
+    }
+    if (!jumpBuf) {
+      jumpBuf = await loadOne("/soundeffects/jump.mp3");
     }
     if (musicWanted) startMusicInternal();
     if (walkWanted) startWalkInternal();
@@ -261,16 +265,78 @@ export function createAudio() {
       pellets?: number;
       meleeCone?: number;
       explosionRadius?: number;
+      sfx?: string;
+      viewmodel?: string;
     } | null,
   ): void {
     const id = weapon?.id ?? "";
+    const sfx = weapon?.sfx;
+
+    if (sfx) {
+      switch (sfx) {
+        case "slap":
+          noiseBurst(local ? 0.08 : 0.05, local ? 0.16 : 0.08, 900);
+          tone(local ? 160 : 140, 0.07, "sine", local ? 0.1 : 0.05, 90);
+          return;
+        case "heavy":
+        case "melee":
+          noiseBurst(local ? 0.12 : 0.08, local ? 0.2 : 0.1, 500);
+          tone(local ? 70 : 55, 0.14, "sawtooth", local ? 0.12 : 0.06, 25);
+          setTimeout(() => noiseBurst(0.08, local ? 0.12 : 0.06, 300), 50);
+          return;
+        case "rocket":
+          noiseBurst(local ? 0.16 : 0.1, local ? 0.2 : 0.09, 550);
+          tone(local ? 85 : 65, 0.18, "sawtooth", local ? 0.11 : 0.055, 28);
+          setTimeout(() => noiseBurst(0.22, local ? 0.16 : 0.07, 320), 45);
+          return;
+        case "chicken":
+          tone(local ? 420 : 360, 0.05, "square", local ? 0.08 : 0.04);
+          tone(local ? 280 : 240, 0.08, "sawtooth", local ? 0.07 : 0.035, 120);
+          noiseBurst(local ? 0.06 : 0.04, local ? 0.1 : 0.05, 1200);
+          return;
+        case "wet":
+          noiseBurst(local ? 0.1 : 0.06, local ? 0.13 : 0.06, 750);
+          tone(local ? 520 : 440, 0.045, "sine", local ? 0.055 : 0.03);
+          return;
+        case "zap":
+          noiseBurst(local ? 0.05 : 0.03, local ? 0.1 : 0.05, 2800);
+          tone(local ? 880 : 720, 0.05, "sawtooth", local ? 0.07 : 0.035, 200);
+          return;
+        case "pea":
+          noiseBurst(local ? 0.035 : 0.025, local ? 0.08 : 0.04, 1600);
+          tone(local ? 340 : 280, 0.03, "sine", local ? 0.04 : 0.02);
+          return;
+        case "burst":
+          noiseBurst(local ? 0.045 : 0.03, local ? 0.11 : 0.05, 2100);
+          tone(local ? 260 : 210, 0.04, "square", local ? 0.05 : 0.025, 90);
+          return;
+        case "shotty":
+          noiseBurst(local ? 0.1 : 0.07, local ? 0.18 : 0.08, 1400);
+          tone(local ? 120 : 100, 0.08, "square", local ? 0.08 : 0.04, 45);
+          return;
+        case "smg":
+          noiseBurst(local ? 0.04 : 0.03, local ? 0.1 : 0.045, 2200);
+          tone(local ? 220 : 180, 0.035, "square", local ? 0.045 : 0.022, 80);
+          return;
+        case "rifle":
+          noiseBurst(local ? 0.06 : 0.04, local ? 0.13 : 0.06, 1700);
+          tone(local ? 190 : 150, 0.055, "square", local ? 0.055 : 0.028, 55);
+          return;
+        case "sniper":
+          noiseBurst(local ? 0.09 : 0.06, local ? 0.16 : 0.07, 900);
+          tone(local ? 140 : 110, 0.12, "sawtooth", local ? 0.09 : 0.04, 40);
+          return;
+        default:
+          break;
+      }
+    }
+
     if (weapon?.meleeCone != null) {
       if (id === "gg_slap") {
         noiseBurst(local ? 0.08 : 0.05, local ? 0.16 : 0.08, 900);
         tone(local ? 160 : 140, 0.07, "sine", local ? 0.1 : 0.05, 90);
         return;
       }
-      // Hammers / board — heavy whoosh + thud
       noiseBurst(local ? 0.12 : 0.08, local ? 0.2 : 0.1, 500);
       tone(local ? 70 : 55, 0.14, "sawtooth", local ? 0.12 : 0.06, 25);
       setTimeout(() => noiseBurst(0.08, local ? 0.12 : 0.06, 300), 50);
@@ -280,22 +346,6 @@ export function createAudio() {
       noiseBurst(local ? 0.18 : 0.12, local ? 0.22 : 0.1, 600);
       tone(local ? 90 : 70, 0.2, "sawtooth", local ? 0.12 : 0.06, 30);
       setTimeout(() => noiseBurst(0.25, local ? 0.18 : 0.08, 350), 40);
-      return;
-    }
-    if (id === "gg_chicken") {
-      tone(local ? 420 : 360, 0.05, "square", local ? 0.08 : 0.04);
-      tone(local ? 280 : 240, 0.08, "sawtooth", local ? 0.07 : 0.035, 120);
-      noiseBurst(local ? 0.06 : 0.04, local ? 0.1 : 0.05, 1200);
-      return;
-    }
-    if (id === "gg_soaker" || id === "gg_bubble") {
-      noiseBurst(local ? 0.09 : 0.06, local ? 0.12 : 0.06, 800);
-      tone(local ? 500 : 420, 0.04, "sine", local ? 0.05 : 0.03);
-      return;
-    }
-    if (id === "gg_thunder" || id === "gg_pointer") {
-      noiseBurst(local ? 0.05 : 0.03, local ? 0.1 : 0.05, 2800);
-      tone(local ? 880 : 720, 0.05, "sawtooth", local ? 0.07 : 0.035, 200);
       return;
     }
     if (weapon?.pellets && weapon.pellets > 1) {
@@ -373,6 +423,18 @@ export function createAudio() {
     noiseBurst(0.3, 0.07, 300);
   }
 
+  /** Play jump.mp3 on a successful grounded jump. */
+  function jump(local = true): void {
+    void (samplesLoading ?? loadSamples()).then(() => {
+      if (jumpBuf) {
+        playBuffer(jumpBuf, local ? 0.225 : 0.11, local ? 1 : 0.96);
+        return;
+      }
+      // Fallback if sample missing
+      tone(local ? 220 : 180, 0.06, "square", local ? 0.025 : 0.015);
+    });
+  }
+
   return {
     unlock,
     setVolume,
@@ -386,5 +448,6 @@ export function createAudio() {
     reload,
     stopReload,
     death,
+    jump,
   };
 }

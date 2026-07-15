@@ -34,10 +34,16 @@ const LOCK_KEYS = [
   "Digit2",
 ];
 
-export async function enterPlayMode(root: HTMLElement = document.documentElement): Promise<void> {
+export async function enterPlayMode(
+  root: HTMLElement = document.documentElement,
+  opts: { fullscreen?: boolean } = {},
+): Promise<void> {
+  const wantFs = opts.fullscreen === true;
   try {
-    if (!document.fullscreenElement) {
+    if (wantFs && !document.fullscreenElement) {
       await root.requestFullscreen?.();
+    } else if (!wantFs && document.fullscreenElement) {
+      await document.exitFullscreen?.();
     }
   } catch {
     /* user gesture / unsupported */

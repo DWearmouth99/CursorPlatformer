@@ -6,6 +6,9 @@ import {
   PLAYER_HEIGHT_STAND,
   PLAYER_RADIUS,
   INTERP_DELAY_MS,
+  INTERP_DELAY_MAX_MS,
+  INTERP_DELAY_MIN_MS,
+  INTERP_RTT_FACTOR,
 } from "./constants.js";
 import type { AABB } from "./collision.js";
 import { forwardFromAngles, rightFlat, type Vec3, vec3 } from "./math.js";
@@ -14,10 +17,13 @@ import { forwardFromAngles, rightFlat, type Vec3, vec3 } from "./math.js";
 export const HEAD_RATIO = 0.28;
 
 /**
- * Visual mesh uses width = 2 * radius for body and 1.5 * radius for head.
- * Slightly inflate hitboxes so rendered center shots register at range.
+ * Visual remotes are wider than the movement capsule (shoulders + arms ~±0.55).
+ * Inflate hitboxes so center-mass / limb aim registers at range.
  */
-export const HITBOX_SCALE = 1.12;
+export const HITBOX_SCALE = 1.4;
+
+/** Cap rewind so we stay inside pose history (~350ms). */
+const LAG_COMP_MAX_MS = 320;
 
 export type HitscanHit = {
   playerId: string;
@@ -31,6 +37,8 @@ export type PoseSample = {
   position: Vec3;
   crouching: boolean;
   alive: boolean;
+  /** Matches client shrink VFX (1 = normal, ~0.45 when shrunk). */
+  scale?: number;
 };
 
 export type PoseHistoryFrame = {
@@ -45,12 +53,27 @@ export function clonePoses(poses: readonly PoseSample[]): PoseSample[] {
     position: { x: p.position.x, y: p.position.y, z: p.position.z },
     crouching: p.crouching,
     alive: p.alive,
+    scale: p.scale ?? 1,
   }));
 }
 
+function lerpPose(a: PoseSample, b: PoseSample, t: number): PoseSample {
+  return {
+    id: a.id,
+    position: {
+      x: a.position.x + (b.position.x - a.position.x) * t,
+      y: a.position.y + (b.position.y - a.position.y) * t,
+      z: a.position.z + (b.position.z - a.position.z) * t,
+    },
+    crouching: t < 0.5 ? a.crouching : b.crouching,
+    alive: a.alive && b.alive,
+    scale: (t < 0.5 ? a.scale : b.scale) ?? 1,
+  };
+}
+
 /**
- * Lag compensation: sample pose history nearest to a past tick.
- * Prefer the frame at or before targetTick (matches client interp delay).
+ * Lag compensation: interpolate poses to a (possibly fractional) past tick.
+ * Matches client remote interpolation between snapshots — critical for movers.
  */
 export function getPlayerPoseAtTime(
   targetTick: number,
@@ -59,28 +82,70 @@ export function getPlayerPoseAtTime(
 ): PoseSample[] {
   if (history.length === 0) return clonePoses(fallback);
 
-  let best = history[0]!;
-  for (const frame of history) {
-    if (frame.tick <= targetTick) best = frame;
-    else break;
-  }
-  // If target is newer than anything stored, use newest
+  const first = history[0]!;
   const last = history[history.length - 1]!;
+  if (targetTick <= first.tick) return clonePoses(first.poses);
   if (targetTick >= last.tick) return clonePoses(last.poses);
-  return clonePoses(best.poses);
+
+  let older = first;
+  let newer = last;
+  for (let i = 0; i < history.length; i++) {
+    const frame = history[i]!;
+    if (frame.tick <= targetTick) older = frame;
+    if (frame.tick >= targetTick) {
+      newer = frame;
+      break;
+    }
+  }
+
+  if (older.tick === newer.tick) return clonePoses(older.poses);
+
+  const t = (targetTick - older.tick) / (newer.tick - older.tick);
+  const newerById = new Map(newer.poses.map((p) => [p.id, p]));
+  const out: PoseSample[] = [];
+  const seen = new Set<string>();
+
+  for (const a of older.poses) {
+    seen.add(a.id);
+    const b = newerById.get(a.id) ?? a;
+    out.push(lerpPose(a, b, t));
+  }
+  for (const b of newer.poses) {
+    if (!seen.has(b.id)) out.push(clonePoses([b])[0]!);
+  }
+  return out;
 }
 
-/** Recommended rewind for hitscan given client entity interpolation. */
-export function lagCompRewindTicks(tickMs: number): number {
-  return Math.max(1, Math.round(INTERP_DELAY_MS / tickMs));
+/**
+ * How far back (ms) to rewind victim poses for a shooter with the given RTT.
+ *
+ * = client view delay (interp buffer) + one-way latency (shot in flight).
+ * Without the one-way term, movers you aimed at have already left that pose
+ * by the time the server processes the shot.
+ */
+export function lagCompRewindMs(rttMs = 120): number {
+  const viewDelay = Math.max(
+    INTERP_DELAY_MIN_MS,
+    Math.min(
+      INTERP_DELAY_MAX_MS,
+      INTERP_DELAY_MS + rttMs * INTERP_RTT_FACTOR,
+    ),
+  );
+  const oneWay = Math.max(15, Math.min(200, rttMs * 0.5));
+  return Math.min(LAG_COMP_MAX_MS, viewDelay + oneWay);
+}
+
+/** Fractional tick rewind (prefer for interpolated sampling). */
+export function lagCompRewindTicks(tickMs: number, rttMs = 120): number {
+  return Math.max(1, lagCompRewindMs(rttMs) / tickMs);
 }
 
 function headAABB(pos: Vec3, height: number, radius: number): AABB {
   const r = radius * HITBOX_SCALE;
   const headH = height * HEAD_RATIO;
   const bodyH = height - headH;
-  // Match mesh: head width ≈ 1.5 * player radius
-  const hx = r * 0.75;
+  // Match mesh head half-extent, yaw-independent
+  const hx = r * 0.8;
   return {
     cx: pos.x,
     cy: pos.y + bodyH + headH * 0.5,
@@ -95,6 +160,7 @@ function bodyAABB(pos: Vec3, height: number, radius: number): AABB {
   const r = radius * HITBOX_SCALE;
   const headH = height * HEAD_RATIO;
   const bodyH = height - headH;
+  // Equal X/Z so facing/strafe direction doesn't shrink the AABB silhouette
   return {
     cx: pos.x,
     cy: pos.y + bodyH * 0.5,
@@ -211,17 +277,20 @@ export function serverHitscan(
 
   for (const pose of poses) {
     if (pose.id === shooterId || !pose.alive) continue;
-    const height = pose.crouching ? PLAYER_HEIGHT_CROUCH : PLAYER_HEIGHT_STAND;
+    const scl = pose.scale != null && pose.scale > 0 ? pose.scale : 1;
+    const height =
+      (pose.crouching ? PLAYER_HEIGHT_CROUCH : PLAYER_HEIGHT_STAND) * scl;
+    const radius = PLAYER_RADIUS * Math.max(scl, 0.35);
 
     const th = rayAABB(
       origin,
       dir,
-      headAABB(pose.position, height, PLAYER_RADIUS),
+      headAABB(pose.position, height, radius),
     );
     const tb = rayAABB(
       origin,
       dir,
-      bodyAABB(pose.position, height, PLAYER_RADIUS),
+      bodyAABB(pose.position, height, radius),
     );
 
     let chosenT: number | null = null;
@@ -279,8 +348,9 @@ export function meleeConeHits(
 ): HitscanHit[] {
   const dir = forwardFromAngles(yaw, pitch, vec3());
   const hits: HitscanHit[] = [];
+  const seen = new Set<string>();
   for (const pose of poses) {
-    if (pose.id === shooterId || !pose.alive) continue;
+    if (pose.id === shooterId || !pose.alive || seen.has(pose.id)) continue;
     const tx = pose.position.x - origin.x;
     const ty = pose.position.y + 1 - origin.y;
     const tz = pose.position.z - origin.z;
@@ -289,6 +359,7 @@ export function meleeConeHits(
     const nd = 1 / dist;
     const dot = tx * nd * dir.x + ty * nd * dir.y + tz * nd * dir.z;
     if (dot < coneDot) continue;
+    seen.add(pose.id);
     hits.push({
       playerId: pose.id,
       isHeadshot: false,

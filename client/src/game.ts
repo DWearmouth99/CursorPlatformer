@@ -128,7 +128,9 @@ export async function startGame(container: HTMLElement) {
       overlay.classList.add("hidden");
       audio.unlock();
       audio.startMusic();
-      void enterPlayMode();
+      void enterPlayMode(document.documentElement, {
+        fullscreen: pauseMenu.getSettings().fullscreen,
+      });
       renderer.domElement.requestPointerLock();
     },
     onMainMenu() {
@@ -142,6 +144,10 @@ export async function startGame(container: HTMLElement) {
       input.setUserSens(s.mouseSens);
       audio.setVolume(s.volume);
       audio.setMusicVolume(s.musicVolume);
+      // Apply fullscreen preference immediately while paused / in-game.
+      void enterPlayMode(document.documentElement, {
+        fullscreen: s.fullscreen,
+      });
     },
   });
   let localId: string | null = null;
@@ -164,8 +170,14 @@ export async function startGame(container: HTMLElement) {
 
   let localSpray = 0;
   let localFireHeld = false;
+  /** Space rising-edge for jump SFX (independent of prediction jumpHeld). */
+  let localJumpHeld = false;
   let localLastFireTick = -999;
+  let localBurstRemaining = 0;
+  let localBurstNextTick = 0;
   let clientTick = 0;
+  /** Last known grounded / jumpHeld per remote — jump SFX only on real jumps. */
+  const remoteJumpPrev = new Map<string, { grounded: boolean; jumpHeld: boolean }>();
 
   function endMatch(winnerId: string): void {
     if (matchOver) return;
@@ -177,9 +189,12 @@ export async function startGame(container: HTMLElement) {
     unlockGameKeys();
     overlay.classList.remove("hidden");
     const you = winnerId === localId;
+    overlay.classList.add("overlay-result");
     overlayHint.textContent = you
-      ? "YOU WIN!\nReturning to menu…"
-      : `${winnerId} wins Gun Game!\nReturning to menu…`;
+      ? "You win Gun Game\nReturning to menu…"
+      : `${winnerId} wins Gun Game\nReturning to menu…`;
+    const title = overlay.querySelector(".overlay-title");
+    if (title) title.textContent = you ? "Victory" : "Match Over";
     window.setTimeout(() => {
       socket.close();
       window.location.reload();
@@ -245,6 +260,25 @@ export async function startGame(container: HTMLElement) {
           }
         }
         interpolator.push(performance.now(), msg.players, msg.tick);
+        for (const p of msg.players) {
+          if (p.id === localId) continue;
+          const prev = remoteJumpPrev.get(p.id);
+          // Require jumpHeld so stairs / sprint leave-ground don't fake a jump.
+          if (
+            prev &&
+            prev.grounded &&
+            !p.grounded &&
+            p.alive &&
+            p.jumpHeld &&
+            p.velocity.y > MOVE.JUMP_VELOCITY * 0.7
+          ) {
+            audio.jump(false);
+          }
+          remoteJumpPrev.set(p.id, {
+            grounded: p.grounded,
+            jumpHeld: p.jumpHeld,
+          });
+        }
         const self = msg.players.find((p) => p.id === localId);
         if (self && welcomed) {
           const wasAlive = localAlive;
@@ -292,17 +326,20 @@ export async function startGame(container: HTMLElement) {
       } else if (msg.type === "playerLeft") {
         interpolator.removePlayer(msg.playerId);
         remotes.remove(msg.playerId);
+        remoteJumpPrev.delete(msg.playerId);
         latestPlayers = latestPlayers.filter((p) => p.id !== msg.playerId);
       } else if (msg.type === "hitConfirm") {
         hud.showHitMarker(msg.isHeadshot);
         audio.hitConfirm(msg.isHeadshot);
       } else if (msg.type === "damage") {
         localHp = msg.hp;
-        hud.showDamageFlash();
+        hud.showDamageFlash(msg.amount);
         audio.hurt();
       } else if (msg.type === "killFeed") {
-        const hs = msg.isHeadshot ? " HS" : "";
-        hud.pushKillFeed(`${msg.killerId} → ${msg.victimId}${hs}`);
+        hud.pushKill(msg.killerId, msg.victimId, {
+          headshot: !!msg.isHeadshot,
+          localId,
+        });
       } else if (msg.type === "shot") {
         if (msg.shooterId === localId) return;
         {
@@ -323,14 +360,14 @@ export async function startGame(container: HTMLElement) {
           localMag = w.magSize;
           localAmmo = w.magSize;
           localReloading = false;
-          hud.pushKillFeed(`Unlocked: ${msg.weaponName}`);
+          hud.pushKillFeed(`Unlocked · ${msg.weaponName}`);
         } else {
-          hud.pushKillFeed(`${msg.playerId} → ${msg.weaponName}`);
+          hud.pushKillFeed(`${msg.playerId} unlocked · ${msg.weaponName}`);
         }
       } else if (msg.type === "gunGameWin") {
         const you = msg.playerId === localId;
         hud.pushKillFeed(
-          you ? "YOU WIN GUN GAME!" : `${msg.playerId} wins Gun Game!`,
+          you ? "Victory · Gun Game complete" : `${msg.playerId} wins Gun Game`,
         );
         endMatch(msg.playerId);
       }
@@ -345,7 +382,9 @@ export async function startGame(container: HTMLElement) {
     if (!welcomed || matchOver || pauseMenu.isOpen()) return;
     audio.unlock();
     audio.startMusic();
-    void enterPlayMode();
+    void enterPlayMode(document.documentElement, {
+      fullscreen: pauseMenu.getSettings().fullscreen,
+    });
     renderer.domElement.requestPointerLock();
   }
 
@@ -362,7 +401,9 @@ export async function startGame(container: HTMLElement) {
       pauseMenu.setOpen(false);
       overlay.classList.add("hidden");
       audio.unlock();
-      void enterPlayMode();
+      void enterPlayMode(document.documentElement, {
+        fullscreen: pauseMenu.getSettings().fullscreen,
+      });
       return;
     }
     unlockGameKeys();
@@ -421,6 +462,7 @@ export async function startGame(container: HTMLElement) {
       buttons.reload = false;
       buttons.sprint = false;
       localFireHeld = false;
+      localJumpHeld = false;
     }
 
     const moving =
@@ -453,19 +495,38 @@ export async function startGame(container: HTMLElement) {
     const fireEdge = buttons.fire && !localFireHeld;
     localFireHeld = buttons.fire;
 
-    const canSemi = !weapon.semiAuto || fireEdge;
-    if (
-      localAlive &&
-      buttons.fire &&
-      canSemi &&
-      !localReloading &&
-      localAmmo > 0 &&
-      clientTick - localLastFireTick >= fireCooldownTicks
-    ) {
+    const isBurst = weapon.fireStyle === "burst";
+    let canFire = false;
+    if (localAlive && !localReloading && localAmmo > 0) {
+      if (isBurst && localBurstRemaining > 0) {
+        canFire = clientTick >= localBurstNextTick;
+      } else if (buttons.fire) {
+        const canSemi = !weapon.semiAuto || fireEdge;
+        canFire =
+          canSemi && clientTick - localLastFireTick >= fireCooldownTicks;
+        if (canFire && isBurst) {
+          localBurstRemaining = Math.min(
+            weapon.burstCount ?? 3,
+            localAmmo,
+          );
+        }
+      }
+    }
+    if (canFire) {
       localLastFireTick = clientTick;
       fireSprayIndex = localSpray;
       localAmmo = Math.max(0, localAmmo - 1);
+      if (isBurst) {
+        localBurstRemaining = Math.max(0, localBurstRemaining - 1);
+        localBurstNextTick = clientTick + 2;
+      }
       firedThisTick = true;
+
+      // Optimistic auto-reload when mag empties (server also triggers)
+      if (localAmmo <= 0 && !localReloading) {
+        localReloading = true;
+        audio.reload(weapon.reloadMs);
+      }
 
       const player = prediction.getState();
       const origin = eyePosition(
@@ -523,12 +584,24 @@ export async function startGame(container: HTMLElement) {
     }
     if (!buttons.fire) localSpray = 0;
 
+    {
+      const beforeJump = prediction.getState();
+      const jumpEdge =
+        localAlive &&
+        beforeJump.grounded &&
+        buttons.jump &&
+        !localJumpHeld;
+      localJumpHeld = buttons.jump;
+      if (jumpEdge) audio.jump(true);
+    }
+
     const cmd = prediction.predictTick(
       buttons,
       input.look.yaw,
       input.look.pitch,
       lean,
     );
+    cmd.rttMs = Math.round(rttMs);
     inputSendAt.set(cmd.seq, performance.now());
     if (inputSendAt.size > 120) {
       const oldest = inputSendAt.keys().next().value;
@@ -584,7 +657,11 @@ export async function startGame(container: HTMLElement) {
     fx.update(now, frameDt, localAlive, localAlive && player.grounded && spd > 1.2, {
       ads,
       adsFov: weapon.adsFov,
-      hideViewmodel: weapon.scopeStyle === "sniper",
+      // Meme / optic guns are bulky — hide VM on ADS so the zoom is usable
+      hideViewmodel:
+        weapon.scopeStyle === "sniper" ||
+        weapon.scopeStyle === "optic" ||
+        weapon.id.startsWith("gg_"),
       reloading: localReloading,
       reloadMs: weapon.reloadMs,
       sprint: localSprinting,
@@ -651,6 +728,7 @@ export async function startGame(container: HTMLElement) {
         className: "Gun Game",
         weaponName: wpn.name,
         statusText: localStatusText,
+        gunLevel,
         scoreboardOpen: input.isScoreboardOpen(),
         players: latestPlayers.map((p) => ({
           id: p.id,

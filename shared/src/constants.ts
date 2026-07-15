@@ -89,7 +89,7 @@ export const MOVE = {
   MAX_VELOCITY: 50,
 } as const;
 
-export const MAX_HP = 200;
+export const MAX_HP = 100;
 export const RESPAWN_MS = 3000;
 
 export const TEAM = {

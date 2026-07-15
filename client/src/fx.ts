@@ -1,7 +1,10 @@
 import * as THREE from "three";
 import {
   defaultWeaponFx,
+  resolveAnimProfile,
+  resolveFireStyle,
   type Vec3,
+  type WeaponAnimProfile,
   type WeaponDef,
   type WeaponFx,
   type WeaponShape,
@@ -17,6 +20,10 @@ type Tracer = {
   dispose: () => void;
   born: number;
   life: number;
+  /** Optional mid-flight update (traveling projectiles). */
+  tick?: (age: number, dt: number) => void;
+  /** Called once when life ends (before dispose). */
+  onEnd?: () => void;
 };
 
 type Impact = {
@@ -31,6 +38,25 @@ type Spark = {
   born: number;
   life: number;
 };
+
+function matStd(
+  color: number,
+  opts: { metalness?: number; roughness?: number; emissive?: number; emissiveIntensity?: number } = {},
+): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({
+    color,
+    roughness: opts.roughness ?? 0.42,
+    metalness: opts.metalness ?? 0.4,
+    emissive: opts.emissive ?? 0x000000,
+    emissiveIntensity: opts.emissiveIntensity ?? 0,
+  });
+}
+
+/** Scale meme guns up so silhouettes read in first person. */
+function finishVm(root: THREE.Group): THREE.Group {
+  if (root.userData.meme) root.scale.setScalar(1.08);
+  return root;
+}
 
 function buildBlockyArm(root: THREE.Group, hx: number, hy: number, hz: number): void {
   const skin = new THREE.MeshStandardMaterial({
@@ -68,15 +94,13 @@ function buildViewmodel(weapon: WeaponDef): THREE.Group {
   const primary = style.primary;
   const accent = style.accent;
   const root = new THREE.Group();
-  const gunMat = new THREE.MeshStandardMaterial({
-    color: primary,
-    roughness: 0.42,
-    metalness: 0.4,
-  });
-  const accentMat = new THREE.MeshStandardMaterial({
-    color: accent,
-    roughness: 0.35,
-    metalness: 0.55,
+  const gunMat = matStd(primary, { metalness: 0.45, roughness: 0.4 });
+  const accentMat = matStd(accent, { metalness: 0.6, roughness: 0.32 });
+  const glowMat = matStd(style.muzzle, {
+    metalness: 0.2,
+    roughness: 0.25,
+    emissive: style.tracer,
+    emissiveIntensity: 0.85,
   });
 
   const add = (
@@ -100,139 +124,267 @@ function buildViewmodel(weapon: WeaponDef): THREE.Group {
   const hy = -0.2;
   const hz = -0.5;
   buildBlockyArm(root, hx, hy, hz);
+  root.userData.animProfile = resolveAnimProfile(weapon);
+  root.userData.idle = weapon.id;
+  root.userData.meme = weapon.id.startsWith("gg_");
+  // Subtle per-meme rest pose (keep on-screen; mostly yaw/roll accents)
+  const restById: Record<string, { x: number; y: number; z: number; rx: number; ry: number; rz: number }> = {
+    gg_pea: { x: 0.01, y: 0.01, z: 0.02, rx: 0.03, ry: -0.04, rz: 0.04 },
+    gg_chicken: { x: 0, y: 0.02, z: 0, rx: -0.05, ry: 0.06, rz: -0.06 },
+    gg_potato: { x: 0.02, y: -0.01, z: -0.02, rx: 0.08, ry: 0, rz: 0.02 },
+    gg_confetti: { x: 0.01, y: 0.02, z: 0.01, rx: 0, ry: -0.06, rz: 0.05 },
+    gg_bees: { x: 0, y: 0, z: -0.01, rx: 0.04, ry: 0.03, rz: 0 },
+    gg_noodle: { x: 0.02, y: 0.02, z: 0, rx: -0.06, ry: 0.05, rz: -0.04 },
+    gg_slap: { x: 0.03, y: 0.02, z: 0.03, rx: 0.08, ry: -0.1, rz: 0.08 },
+    gg_bubble: { x: 0, y: 0.03, z: 0.01, rx: 0.02, ry: 0, rz: -0.04 },
+    gg_disco: { x: -0.01, y: 0.02, z: 0, rx: 0, ry: 0.08, rz: 0.06 },
+    gg_spoon: { x: 0.01, y: -0.02, z: -0.02, rx: 0.06, ry: 0, rz: 0 },
+    gg_soaker: { x: 0.01, y: 0, z: 0.01, rx: -0.04, ry: -0.03, rz: 0.03 },
+    gg_accordion: { x: -0.02, y: 0, z: 0, rx: 0.04, ry: 0.06, rz: -0.05 },
+    gg_shrink: { x: 0.02, y: 0.01, z: 0.02, rx: 0, ry: -0.05, rz: 0 },
+    gg_thunder: { x: 0, y: 0.01, z: 0, rx: 0.06, ry: 0.04, rz: 0.06 },
+    gg_flappy: { x: 0, y: 0.02, z: 0.01, rx: -0.06, ry: 0.08, rz: 0 },
+    gg_hammer: { x: 0.02, y: -0.02, z: -0.02, rx: -0.1, ry: 0.05, rz: -0.08 },
+    gg_pointer: { x: 0.02, y: 0.02, z: 0.02, rx: 0.02, ry: 0, rz: 0 },
+    gg_banana_peel: { x: 0.01, y: 0.01, z: 0.01, rx: 0.04, ry: -0.08, rz: 0.04 },
+    gg_ban: { x: 0.03, y: -0.02, z: -0.02, rx: -0.1, ry: 0.06, rz: -0.1 },
+    gg_golden: { x: 0, y: 0.03, z: 0.02, rx: 0.05, ry: 0.04, rz: 0.04 },
+  };
+  root.userData.rest = restById[weapon.id] ?? { x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0 };
 
-  // Themed meme / melee meshes by weapon id
+  // Rich procedural meme meshes (GLB guns never hit this path when loaded)
   switch (weapon.id) {
     case "gg_slap": {
-      // Giant tactical slap-hand
-      add(new THREE.BoxGeometry(0.14, 0.22, 0.08), gunMat, 0.28, -0.12, -0.72);
-      add(new THREE.BoxGeometry(0.05, 0.12, 0.05), accentMat, 0.22, -0.02, -0.72);
-      add(new THREE.BoxGeometry(0.05, 0.14, 0.05), accentMat, 0.28, 0.0, -0.72);
-      add(new THREE.BoxGeometry(0.05, 0.13, 0.05), accentMat, 0.34, -0.01, -0.72);
-      add(new THREE.BoxGeometry(0.05, 0.1, 0.05), accentMat, 0.4, -0.04, -0.72);
-      add(new THREE.BoxGeometry(0.06, 0.08, 0.05), gunMat, 0.18, -0.2, -0.7);
+      add(new THREE.BoxGeometry(0.2, 0.3, 0.11), gunMat, 0.32, -0.08, -0.68);
+      add(new THREE.BoxGeometry(0.07, 0.18, 0.07), accentMat, 0.22, 0.06, -0.68);
+      add(new THREE.BoxGeometry(0.07, 0.2, 0.07), accentMat, 0.3, 0.08, -0.68);
+      add(new THREE.BoxGeometry(0.07, 0.19, 0.07), accentMat, 0.38, 0.07, -0.68);
+      add(new THREE.BoxGeometry(0.07, 0.16, 0.07), accentMat, 0.46, 0.02, -0.68);
+      add(new THREE.BoxGeometry(0.07, 0.14, 0.07), gunMat, 0.53, -0.04, -0.66);
+      add(new THREE.BoxGeometry(0.09, 0.11, 0.08), gunMat, 0.16, -0.22, -0.66);
+      add(new THREE.SphereGeometry(0.045, 8, 8), glowMat, 0.32, -0.24, -0.58);
       root.userData.melee = true;
-      return root;
+      return finishVm(root);
     }
     case "gg_hammer": {
-      // Gravity hammer — long haft + huge head
-      add(new THREE.CylinderGeometry(0.035, 0.04, 0.85, 8), gunMat, 0.2, -0.1, -0.85, Math.PI / 2, 0, 0);
-      add(new THREE.BoxGeometry(0.28, 0.22, 0.32), accentMat, 0.2, -0.08, -1.25);
-      add(new THREE.BoxGeometry(0.12, 0.08, 0.12), gunMat, 0.2, -0.08, -1.42);
+      const haft = add(
+        new THREE.CylinderGeometry(0.05, 0.06, 1.1, 10),
+        gunMat,
+        0.2,
+        -0.08,
+        -0.92,
+        Math.PI / 2,
+        0,
+        0,
+      );
+      root.userData.animParts = { haft };
+      add(new THREE.BoxGeometry(0.42, 0.32, 0.46), accentMat, 0.2, -0.06, -1.42);
+      add(new THREE.BoxGeometry(0.46, 0.1, 0.22), glowMat, 0.2, 0.1, -1.42);
+      add(new THREE.CylinderGeometry(0.08, 0.1, 0.14, 8), gunMat, 0.2, -0.08, -0.38, Math.PI / 2, 0, 0);
       root.userData.melee = true;
-      return root;
+      return finishVm(root);
     }
     case "gg_ban": {
-      // Ban hammer / judge gavel
-      add(new THREE.CylinderGeometry(0.03, 0.035, 0.7, 8), gunMat, 0.2, -0.12, -0.8, Math.PI / 2, 0, 0);
-      add(new THREE.BoxGeometry(0.34, 0.16, 0.2), accentMat, 0.2, -0.08, -1.15);
-      add(new THREE.BoxGeometry(0.18, 0.05, 0.22), gunMat, 0.2, 0.02, -1.15);
-      // little "X" ban plate
-      add(new THREE.BoxGeometry(0.12, 0.12, 0.04), accentMat, 0.2, -0.08, -1.28);
+      add(new THREE.CylinderGeometry(0.04, 0.05, 0.9, 10), gunMat, 0.2, -0.1, -0.86, Math.PI / 2, 0, 0);
+      add(new THREE.BoxGeometry(0.46, 0.22, 0.3), accentMat, 0.2, -0.06, -1.28);
+      add(new THREE.BoxGeometry(0.24, 0.08, 0.32), gunMat, 0.2, 0.08, -1.28);
+      add(new THREE.BoxGeometry(0.18, 0.18, 0.06), glowMat, 0.2, -0.06, -1.46);
+      add(new THREE.BoxGeometry(0.12, 0.025, 0.025), gunMat, 0.2, -0.06, -1.5, 0, 0, 0.7);
+      add(new THREE.BoxGeometry(0.12, 0.025, 0.025), gunMat, 0.2, -0.06, -1.5, 0, 0, -0.7);
       root.userData.melee = true;
-      return root;
+      return finishVm(root);
     }
     case "gg_pea": {
-      add(new THREE.SphereGeometry(0.09, 10, 10), gunMat, hx, hy, -0.58);
-      add(new THREE.CylinderGeometry(0.04, 0.055, 0.28, 8), accentMat, hx, hy + 0.02, -0.82, Math.PI / 2, 0, 0);
-      add(new THREE.SphereGeometry(0.035, 8, 8), accentMat, hx, hy + 0.08, -0.55);
-      return root;
+      add(new THREE.SphereGeometry(0.13, 14, 14), gunMat, hx, hy, -0.54);
+      add(new THREE.SphereGeometry(0.06, 10, 10), accentMat, hx - 0.09, hy + 0.08, -0.48);
+      add(new THREE.SphereGeometry(0.055, 10, 10), accentMat, hx + 0.1, hy + 0.03, -0.5);
+      add(new THREE.SphereGeometry(0.04, 8, 8), accentMat, hx, hy - 0.08, -0.48);
+      const barrel = add(
+        new THREE.CylinderGeometry(0.05, 0.08, 0.4, 12),
+        accentMat,
+        hx,
+        hy + 0.02,
+        -0.9,
+        Math.PI / 2,
+        0,
+        0,
+      );
+      add(new THREE.SphereGeometry(0.04, 8, 8), glowMat, hx, hy + 0.02, -1.12);
+      root.userData.animParts = { barrel };
+      return finishVm(root);
     }
     case "gg_chicken": {
-      add(new THREE.SphereGeometry(0.11, 10, 10), gunMat, hx, hy, -0.62);
-      add(new THREE.ConeGeometry(0.05, 0.16, 6), accentMat, hx, hy + 0.02, -0.86, Math.PI / 2, 0, 0);
-      add(new THREE.BoxGeometry(0.04, 0.08, 0.03), accentMat, hx - 0.08, hy + 0.1, -0.58);
-      add(new THREE.BoxGeometry(0.04, 0.08, 0.03), accentMat, hx + 0.08, hy + 0.1, -0.58);
-      return root;
+      add(new THREE.SphereGeometry(0.16, 14, 14), gunMat, hx, hy, -0.58);
+      add(new THREE.SphereGeometry(0.09, 12, 12), gunMat, hx, hy + 0.1, -0.48);
+      add(new THREE.ConeGeometry(0.07, 0.22, 8), accentMat, hx, hy + 0.05, -0.9, Math.PI / 2, 0, 0);
+      add(new THREE.BoxGeometry(0.07, 0.14, 0.04), accentMat, hx - 0.13, hy + 0.14, -0.52, 0, 0, 0.35);
+      add(new THREE.BoxGeometry(0.07, 0.14, 0.04), accentMat, hx + 0.13, hy + 0.14, -0.52, 0, 0, -0.35);
+      add(new THREE.BoxGeometry(0.04, 0.08, 0.16), gunMat, hx, hy - 0.12, -0.5);
+      add(new THREE.SphereGeometry(0.025, 6, 6), glowMat, hx + 0.05, hy + 0.12, -0.44);
+      add(new THREE.SphereGeometry(0.025, 6, 6), glowMat, hx - 0.05, hy + 0.12, -0.44);
+      return finishVm(root);
     }
     case "gg_potato": {
-      add(new THREE.SphereGeometry(0.1, 8, 8), gunMat, hx, hy, -0.55);
-      add(new THREE.CylinderGeometry(0.1, 0.12, 0.5, 10), accentMat, hx, hy, -0.85, Math.PI / 2, 0, 0);
-      add(new THREE.BoxGeometry(0.16, 0.14, 0.2), gunMat, hx, hy - 0.1, -0.4);
-      return root;
+      add(new THREE.CylinderGeometry(0.15, 0.18, 0.72, 14), accentMat, hx, hy, -0.92, Math.PI / 2, 0, 0);
+      add(new THREE.SphereGeometry(0.14, 12, 12), gunMat, hx, hy, -0.48);
+      add(new THREE.BoxGeometry(0.22, 0.2, 0.28), gunMat, hx, hy - 0.14, -0.32);
+      add(new THREE.TorusGeometry(0.13, 0.03, 6, 16), glowMat, hx, hy, -0.56, Math.PI / 2, 0, 0);
+      const potato = add(new THREE.SphereGeometry(0.09, 10, 10), gunMat, hx, hy, -0.74);
+      potato.scale.set(1.35, 0.85, 0.95);
+      add(new THREE.BoxGeometry(0.08, 0.12, 0.1), accentMat, hx + 0.1, hy + 0.08, -0.4);
+      root.userData.animParts = { potato };
+      return finishVm(root);
     }
     case "gg_noodle": {
-      add(new THREE.TorusGeometry(0.08, 0.035, 6, 12), gunMat, hx, hy, -0.55);
-      add(new THREE.CylinderGeometry(0.05, 0.07, 0.4, 8), accentMat, hx, hy, -0.85, Math.PI / 2, 0, 0);
-      return root;
+      add(new THREE.TorusGeometry(0.12, 0.05, 8, 18), gunMat, hx, hy, -0.5);
+      add(new THREE.TorusGeometry(0.09, 0.04, 6, 16), accentMat, hx + 0.03, hy + 0.05, -0.62);
+      add(new THREE.TorusGeometry(0.07, 0.03, 6, 14), gunMat, hx - 0.02, hy - 0.03, -0.72);
+      add(new THREE.CylinderGeometry(0.06, 0.1, 0.55, 10), accentMat, hx, hy, -0.95, Math.PI / 2, 0, 0);
+      add(new THREE.SphereGeometry(0.055, 8, 8), glowMat, hx, hy, -1.22);
+      return finishVm(root);
     }
     case "gg_bubble": {
-      add(new THREE.SphereGeometry(0.1, 12, 12), gunMat, hx, hy, -0.6);
-      add(new THREE.SphereGeometry(0.05, 8, 8), accentMat, hx + 0.08, hy + 0.06, -0.7);
-      add(new THREE.CylinderGeometry(0.04, 0.06, 0.22, 8), accentMat, hx, hy, -0.82, Math.PI / 2, 0, 0);
-      return root;
+      add(new THREE.SphereGeometry(0.15, 16, 16), gunMat, hx, hy, -0.56);
+      add(new THREE.SphereGeometry(0.08, 12, 12), accentMat, hx + 0.11, hy + 0.09, -0.66);
+      add(new THREE.SphereGeometry(0.06, 10, 10), glowMat, hx - 0.08, hy + 0.1, -0.48);
+      add(new THREE.SphereGeometry(0.045, 8, 8), glowMat, hx + 0.02, hy - 0.1, -0.62);
+      add(new THREE.CylinderGeometry(0.05, 0.09, 0.34, 10), accentMat, hx, hy, -0.9, Math.PI / 2, 0, 0);
+      add(new THREE.TorusGeometry(0.08, 0.02, 6, 14), glowMat, hx, hy, -1.08, Math.PI / 2, 0, 0);
+      return finishVm(root);
     }
     case "gg_spoon": {
-      add(new THREE.BoxGeometry(0.06, 0.04, 0.55), gunMat, hx, hy, -0.75);
-      add(new THREE.SphereGeometry(0.08, 8, 8), accentMat, hx, hy + 0.02, -1.1);
-      add(new THREE.BoxGeometry(0.1, 0.08, 0.16), gunMat, hx, hy - 0.06, -0.4);
-      return root;
+      const bolt = add(new THREE.BoxGeometry(0.06, 0.04, 0.32), glowMat, hx, hy + 0.05, -0.58);
+      root.userData.animParts = { bolt };
+      add(new THREE.BoxGeometry(0.08, 0.05, 0.72), gunMat, hx, hy, -0.82);
+      add(new THREE.SphereGeometry(0.12, 12, 12), accentMat, hx, hy + 0.02, -1.22);
+      add(new THREE.SphereGeometry(0.08, 10, 10), accentMat, hx, hy + 0.02, -1.32);
+      add(new THREE.CylinderGeometry(0.045, 0.045, 0.12, 8), glowMat, hx, hy + 0.1, -0.5, Math.PI / 2, 0, 0);
+      add(new THREE.BoxGeometry(0.13, 0.1, 0.2), gunMat, hx, hy - 0.08, -0.34);
+      return finishVm(root);
     }
     case "gg_soaker": {
-      add(new THREE.BoxGeometry(0.1, 0.14, 0.42), gunMat, hx, hy, -0.62);
-      add(new THREE.CylinderGeometry(0.035, 0.035, 0.4, 8), accentMat, hx, hy + 0.04, -0.95, Math.PI / 2, 0, 0);
-      add(new THREE.BoxGeometry(0.12, 0.16, 0.14), accentMat, hx, hy - 0.08, -0.4);
-      return root;
+      add(new THREE.BoxGeometry(0.15, 0.2, 0.55), gunMat, hx, hy, -0.58);
+      add(new THREE.BoxGeometry(0.18, 0.22, 0.2), accentMat, hx, hy - 0.1, -0.32);
+      const nozzle = add(
+        new THREE.CylinderGeometry(0.055, 0.045, 0.55, 12),
+        glowMat,
+        hx,
+        hy + 0.06,
+        -1.02,
+        Math.PI / 2,
+        0,
+        0,
+      );
+      add(new THREE.BoxGeometry(0.1, 0.12, 0.12), accentMat, hx, hy + 0.14, -0.48);
+      add(new THREE.SphereGeometry(0.04, 8, 8), glowMat, hx, hy + 0.06, -1.3);
+      root.userData.animParts = { nozzle };
+      return finishVm(root);
     }
     case "gg_shrink": {
-      add(new THREE.BoxGeometry(0.08, 0.1, 0.28), gunMat, hx, hy, -0.55);
-      add(new THREE.ConeGeometry(0.07, 0.22, 8), accentMat, hx, hy, -0.82, Math.PI / 2, 0, 0);
-      add(new THREE.TorusGeometry(0.05, 0.015, 6, 10), accentMat, hx, hy, -0.95);
-      return root;
+      add(new THREE.BoxGeometry(0.11, 0.13, 0.34), gunMat, hx, hy, -0.5);
+      const cone = add(new THREE.ConeGeometry(0.11, 0.36, 12), glowMat, hx, hy, -0.9, Math.PI / 2, 0, 0);
+      add(new THREE.TorusGeometry(0.08, 0.022, 8, 16), accentMat, hx, hy, -1.08, Math.PI / 2, 0, 0);
+      add(new THREE.TorusGeometry(0.05, 0.015, 8, 14), glowMat, hx, hy, -1.18, Math.PI / 2, 0, 0);
+      add(new THREE.SphereGeometry(0.04, 8, 8), glowMat, hx, hy, -1.26);
+      root.userData.animParts = { cone };
+      return finishVm(root);
     }
     case "gg_thunder": {
-      add(new THREE.BoxGeometry(0.09, 0.12, 0.26), gunMat, hx, hy, -0.52);
-      add(new THREE.BoxGeometry(0.04, 0.18, 0.04), accentMat, hx, hy + 0.08, -0.72, 0, 0, 0.4);
-      add(new THREE.BoxGeometry(0.04, 0.14, 0.04), accentMat, hx + 0.04, hy - 0.02, -0.8, 0, 0, -0.5);
-      return root;
+      add(new THREE.BoxGeometry(0.12, 0.16, 0.32), gunMat, hx, hy, -0.48);
+      add(new THREE.BoxGeometry(0.06, 0.28, 0.06), glowMat, hx, hy + 0.12, -0.72, 0, 0, 0.45);
+      add(new THREE.BoxGeometry(0.06, 0.24, 0.06), glowMat, hx + 0.06, hy - 0.02, -0.86, 0, 0, -0.55);
+      add(new THREE.BoxGeometry(0.05, 0.16, 0.05), accentMat, hx - 0.05, hy + 0.05, -0.98, 0, 0, 0.25);
+      add(new THREE.BoxGeometry(0.05, 0.14, 0.05), glowMat, hx + 0.02, hy + 0.08, -1.08, 0, 0, -0.35);
+      add(new THREE.SphereGeometry(0.05, 8, 8), glowMat, hx, hy + 0.02, -1.12);
+      return finishVm(root);
     }
     case "gg_pointer": {
-      add(new THREE.BoxGeometry(0.06, 0.06, 0.28), gunMat, hx, hy, -0.55);
-      add(new THREE.CylinderGeometry(0.015, 0.015, 0.35, 6), accentMat, hx, hy, -0.85, Math.PI / 2, 0, 0);
-      add(new THREE.SphereGeometry(0.025, 6, 6), accentMat, hx, hy, -1.05);
-      return root;
+      add(new THREE.BoxGeometry(0.08, 0.08, 0.36), gunMat, hx, hy, -0.5);
+      add(new THREE.CylinderGeometry(0.022, 0.022, 0.55, 8), glowMat, hx, hy, -0.95, Math.PI / 2, 0, 0);
+      add(new THREE.SphereGeometry(0.045, 8, 8), glowMat, hx, hy, -1.24);
+      add(new THREE.ConeGeometry(0.05, 0.1, 8), accentMat, hx, hy, -1.32, Math.PI / 2, 0, 0);
+      add(new THREE.BoxGeometry(0.1, 0.05, 0.1), accentMat, hx, hy + 0.06, -0.4);
+      return finishVm(root);
     }
     case "gg_golden": {
-      add(new THREE.SphereGeometry(0.1, 10, 10), gunMat, hx, hy, -0.58);
-      add(new THREE.CylinderGeometry(0.03, 0.05, 0.25, 8), accentMat, hx, hy + 0.08, -0.72, 0.6, 0, 0);
-      return root;
+      const glow = matStd(0xffe566, {
+        metalness: 0.85,
+        roughness: 0.18,
+        emissive: 0xffd700,
+        emissiveIntensity: 1.1,
+      });
+      add(new THREE.SphereGeometry(0.14, 14, 14), glow, hx, hy, -0.54);
+      add(new THREE.CylinderGeometry(0.04, 0.07, 0.34, 10), accentMat, hx, hy + 0.11, -0.74, 0.55, 0, 0);
+      add(new THREE.TorusGeometry(0.1, 0.025, 6, 16), glow, hx, hy, -0.48, 0.4, 0, 0);
+      add(new THREE.BoxGeometry(0.06, 0.06, 0.06), glow, hx + 0.1, hy + 0.08, -0.5);
+      return finishVm(root);
     }
     case "gg_banana_peel": {
-      add(new THREE.BoxGeometry(0.1, 0.1, 0.36), gunMat, hx, hy, -0.55);
-      add(new THREE.BoxGeometry(0.05, 0.04, 0.22), accentMat, hx, hy + 0.05, -0.82);
-      add(new THREE.SphereGeometry(0.06, 8, 8), accentMat, hx, hy - 0.02, -0.95);
-      return root;
+      add(new THREE.BoxGeometry(0.13, 0.13, 0.44), gunMat, hx, hy, -0.52);
+      add(new THREE.BoxGeometry(0.07, 0.06, 0.3), accentMat, hx, hy + 0.08, -0.86);
+      add(new THREE.SphereGeometry(0.09, 12, 12), accentMat, hx, hy - 0.02, -1.04);
+      add(new THREE.BoxGeometry(0.05, 0.12, 0.05), gunMat, hx - 0.09, hy + 0.05, -0.72, 0, 0, 0.4);
+      add(new THREE.BoxGeometry(0.05, 0.12, 0.05), gunMat, hx + 0.09, hy + 0.05, -0.72, 0, 0, -0.4);
+      add(new THREE.BoxGeometry(0.05, 0.1, 0.05), gunMat, hx, hy + 0.1, -0.78);
+      return finishVm(root);
     }
     case "gg_bees": {
-      add(new THREE.BoxGeometry(0.14, 0.14, 0.28), gunMat, hx, hy, -0.55);
-      add(new THREE.BoxGeometry(0.16, 0.04, 0.16), accentMat, hx, hy + 0.08, -0.55);
-      add(new THREE.CylinderGeometry(0.05, 0.06, 0.3, 8), accentMat, hx, hy, -0.85, Math.PI / 2, 0, 0);
-      return root;
+      add(new THREE.BoxGeometry(0.2, 0.2, 0.38), gunMat, hx, hy, -0.52);
+      add(new THREE.BoxGeometry(0.22, 0.06, 0.22), accentMat, hx, hy + 0.12, -0.52);
+      add(new THREE.BoxGeometry(0.22, 0.06, 0.22), accentMat, hx, hy - 0.12, -0.52);
+      add(new THREE.BoxGeometry(0.22, 0.06, 0.1), accentMat, hx, hy, -0.36);
+      const pump = add(
+        new THREE.CylinderGeometry(0.07, 0.09, 0.4, 10),
+        accentMat,
+        hx,
+        hy,
+        -0.94,
+        Math.PI / 2,
+        0,
+        0,
+      );
+      add(new THREE.SphereGeometry(0.035, 6, 6), glowMat, hx + 0.1, hy + 0.1, -0.44);
+      add(new THREE.SphereGeometry(0.03, 6, 6), glowMat, hx - 0.1, hy - 0.06, -0.5);
+      root.userData.animParts = { pump };
+      return finishVm(root);
     }
     case "gg_confetti": {
-      add(new THREE.BoxGeometry(0.09, 0.11, 0.36), gunMat, hx, hy, -0.55);
-      add(new THREE.BoxGeometry(0.12, 0.04, 0.12), accentMat, hx, hy + 0.08, -0.7);
-      add(new THREE.BoxGeometry(0.04, 0.04, 0.22), accentMat, hx, hy, -0.88);
-      return root;
+      add(new THREE.BoxGeometry(0.12, 0.14, 0.48), gunMat, hx, hy, -0.54);
+      add(new THREE.BoxGeometry(0.16, 0.06, 0.16), accentMat, hx, hy + 0.11, -0.7);
+      add(new THREE.BoxGeometry(0.06, 0.06, 0.32), glowMat, hx, hy, -0.94);
+      add(new THREE.BoxGeometry(0.07, 0.16, 0.1), accentMat, hx, hy - 0.14, -0.42);
+      add(new THREE.BoxGeometry(0.04, 0.04, 0.04), glowMat, hx + 0.08, hy + 0.08, -0.8);
+      add(new THREE.BoxGeometry(0.04, 0.04, 0.04), accentMat, hx - 0.07, hy + 0.04, -0.88);
+      return finishVm(root);
     }
     case "gg_disco": {
-      add(new THREE.BoxGeometry(0.12, 0.12, 0.4), gunMat, hx, hy, -0.58);
-      add(new THREE.SphereGeometry(0.07, 10, 10), accentMat, hx, hy + 0.1, -0.5);
-      add(new THREE.CylinderGeometry(0.035, 0.035, 0.35, 8), accentMat, hx - 0.04, hy, -0.92, Math.PI / 2, 0, 0);
-      add(new THREE.CylinderGeometry(0.035, 0.035, 0.35, 8), gunMat, hx + 0.04, hy, -0.92, Math.PI / 2, 0, 0);
-      return root;
+      add(new THREE.BoxGeometry(0.15, 0.15, 0.48), gunMat, hx, hy, -0.54);
+      const ball = add(new THREE.SphereGeometry(0.11, 14, 14), glowMat, hx, hy + 0.14, -0.44);
+      root.userData.animParts = { ball };
+      add(new THREE.CylinderGeometry(0.045, 0.045, 0.48, 8), accentMat, hx - 0.06, hy, -1.0, Math.PI / 2, 0, 0);
+      add(new THREE.CylinderGeometry(0.045, 0.045, 0.48, 8), gunMat, hx + 0.06, hy, -1.0, Math.PI / 2, 0, 0);
+      add(new THREE.BoxGeometry(0.08, 0.08, 0.08), accentMat, hx, hy - 0.1, -0.36);
+      return finishVm(root);
     }
     case "gg_accordion": {
-      add(new THREE.BoxGeometry(0.22, 0.14, 0.18), gunMat, hx, hy, -0.55);
-      add(new THREE.BoxGeometry(0.18, 0.12, 0.08), accentMat, hx, hy, -0.7);
-      add(new THREE.BoxGeometry(0.22, 0.14, 0.12), gunMat, hx, hy, -0.85);
-      return root;
+      add(new THREE.BoxGeometry(0.28, 0.18, 0.22), gunMat, hx, hy, -0.48);
+      const bellows = add(new THREE.BoxGeometry(0.24, 0.15, 0.14), accentMat, hx, hy, -0.7);
+      add(new THREE.BoxGeometry(0.28, 0.18, 0.18), gunMat, hx, hy, -0.92);
+      add(new THREE.BoxGeometry(0.1, 0.1, 0.24), glowMat, hx, hy + 0.02, -1.12);
+      add(new THREE.BoxGeometry(0.06, 0.2, 0.04), accentMat, hx - 0.14, hy, -0.7);
+      add(new THREE.BoxGeometry(0.06, 0.2, 0.04), accentMat, hx + 0.14, hy, -0.7);
+      root.userData.animParts = { bellows };
+      return finishVm(root);
     }
     case "gg_flappy": {
-      add(new THREE.BoxGeometry(0.1, 0.1, 0.3), gunMat, hx, hy, -0.55);
-      add(new THREE.BoxGeometry(0.22, 0.03, 0.1), accentMat, hx, hy + 0.06, -0.7);
-      add(new THREE.BoxGeometry(0.04, 0.04, 0.2), accentMat, hx, hy, -0.85);
-      return root;
+      add(new THREE.BoxGeometry(0.13, 0.13, 0.36), gunMat, hx, hy, -0.5);
+      const wing = add(new THREE.BoxGeometry(0.36, 0.04, 0.14), accentMat, hx, hy + 0.09, -0.68);
+      add(new THREE.BoxGeometry(0.36, 0.04, 0.1), glowMat, hx, hy - 0.02, -0.7);
+      add(new THREE.BoxGeometry(0.055, 0.055, 0.28), glowMat, hx, hy, -0.9);
+      add(new THREE.SphereGeometry(0.055, 8, 8), gunMat, hx, hy + 0.05, -0.38);
+      add(new THREE.ConeGeometry(0.04, 0.08, 6), accentMat, hx + 0.04, hy + 0.05, -0.32, Math.PI / 2, 0, 0);
+      root.userData.animParts = { wing };
+      return finishVm(root);
     }
     default:
       break;
@@ -246,46 +398,68 @@ function buildViewmodel(weapon: WeaponDef): THREE.Group {
     return root;
   }
 
+  // Shape fallbacks when GLBs missing — distinct silhouettes per class
   switch (shape) {
-    case "smg":
-      add(new THREE.BoxGeometry(0.09, 0.11, 0.38), gunMat, 0.22, -0.22, -0.52);
-      add(new THREE.BoxGeometry(0.04, 0.04, 0.28), accentMat, 0.22, -0.18, -0.82);
-      add(new THREE.BoxGeometry(0.05, 0.16, 0.07), accentMat, 0.22, -0.34, -0.5);
-      add(new THREE.BoxGeometry(0.07, 0.08, 0.12), gunMat, 0.22, -0.26, -0.3);
+    case "smg": {
+      add(new THREE.BoxGeometry(0.1, 0.12, 0.42), gunMat, 0.22, -0.21, -0.54);
+      add(new THREE.BoxGeometry(0.045, 0.045, 0.32), accentMat, 0.22, -0.16, -0.86);
+      add(new THREE.BoxGeometry(0.055, 0.18, 0.08), accentMat, 0.22, -0.36, -0.48);
+      add(new THREE.BoxGeometry(0.08, 0.09, 0.14), gunMat, 0.22, -0.26, -0.28);
+      add(new THREE.BoxGeometry(0.06, 0.04, 0.1), glowMat, 0.22, -0.12, -0.4);
       break;
-    case "shotgun":
-      add(new THREE.BoxGeometry(0.12, 0.14, 0.48), gunMat, 0.22, -0.23, -0.55);
-      add(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 8), accentMat, 0.18, -0.18, -0.9, Math.PI / 2, 0, 0);
-      add(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 8), accentMat, 0.26, -0.18, -0.9, Math.PI / 2, 0, 0);
-      add(new THREE.BoxGeometry(0.08, 0.12, 0.18), gunMat, 0.22, -0.28, -0.28);
+    }
+    case "shotgun": {
+      add(new THREE.BoxGeometry(0.13, 0.15, 0.52), gunMat, 0.22, -0.22, -0.56);
+      const pump = add(
+        new THREE.BoxGeometry(0.1, 0.08, 0.16),
+        accentMat,
+        0.22,
+        -0.2,
+        -0.78,
+      );
+      add(new THREE.CylinderGeometry(0.032, 0.032, 0.55, 8), accentMat, 0.17, -0.16, -0.95, Math.PI / 2, 0, 0);
+      add(new THREE.CylinderGeometry(0.032, 0.032, 0.55, 8), accentMat, 0.27, -0.16, -0.95, Math.PI / 2, 0, 0);
+      add(new THREE.BoxGeometry(0.09, 0.13, 0.2), gunMat, 0.22, -0.3, -0.26);
+      root.userData.animParts = { pump };
       break;
-    case "sniper":
-      add(new THREE.BoxGeometry(0.1, 0.1, 0.62), gunMat, 0.22, -0.22, -0.6);
-      add(new THREE.CylinderGeometry(0.022, 0.022, 0.7, 8), accentMat, 0.22, -0.17, -1.05, Math.PI / 2, 0, 0);
-      add(new THREE.CylinderGeometry(0.045, 0.045, 0.14, 10), accentMat, 0.22, -0.08, -0.55, Math.PI / 2, 0, 0);
-      add(new THREE.BoxGeometry(0.08, 0.14, 0.22), gunMat, 0.22, -0.3, -0.25);
+    }
+    case "sniper": {
+      add(new THREE.BoxGeometry(0.11, 0.11, 0.68), gunMat, 0.22, -0.2, -0.62);
+      const bolt = add(new THREE.BoxGeometry(0.04, 0.03, 0.2), glowMat, 0.22, -0.12, -0.5);
+      add(new THREE.CylinderGeometry(0.024, 0.024, 0.78, 8), accentMat, 0.22, -0.15, -1.12, Math.PI / 2, 0, 0);
+      add(new THREE.CylinderGeometry(0.05, 0.05, 0.16, 10), accentMat, 0.22, -0.05, -0.52, Math.PI / 2, 0, 0);
+      add(new THREE.BoxGeometry(0.09, 0.15, 0.24), gunMat, 0.22, -0.32, -0.24);
+      root.userData.animParts = { bolt };
       break;
-    case "pistol":
-      add(new THREE.BoxGeometry(0.08, 0.12, 0.24), gunMat, 0.22, -0.2, -0.48);
-      add(new THREE.BoxGeometry(0.04, 0.04, 0.2), accentMat, 0.22, -0.16, -0.68);
-      add(new THREE.BoxGeometry(0.06, 0.14, 0.08), accentMat, 0.22, -0.3, -0.42);
+    }
+    case "pistol": {
+      add(new THREE.BoxGeometry(0.09, 0.13, 0.26), gunMat, 0.22, -0.18, -0.48);
+      add(new THREE.BoxGeometry(0.045, 0.045, 0.22), accentMat, 0.22, -0.14, -0.72);
+      add(new THREE.BoxGeometry(0.065, 0.16, 0.09), accentMat, 0.22, -0.32, -0.4);
+      add(new THREE.BoxGeometry(0.04, 0.03, 0.06), glowMat, 0.22, -0.1, -0.58);
       break;
-    case "cannon":
-      add(new THREE.CylinderGeometry(0.08, 0.1, 0.55, 10), gunMat, 0.22, -0.2, -0.7, Math.PI / 2, 0, 0);
-      add(new THREE.BoxGeometry(0.14, 0.16, 0.22), accentMat, 0.22, -0.28, -0.35);
-      add(new THREE.BoxGeometry(0.1, 0.08, 0.12), gunMat, 0.22, -0.18, -0.42);
+    }
+    case "cannon": {
+      add(new THREE.CylinderGeometry(0.09, 0.12, 0.62, 12), gunMat, 0.22, -0.18, -0.74, Math.PI / 2, 0, 0);
+      add(new THREE.BoxGeometry(0.16, 0.18, 0.24), accentMat, 0.22, -0.3, -0.34);
+      add(new THREE.BoxGeometry(0.11, 0.09, 0.14), gunMat, 0.22, -0.16, -0.4);
+      add(new THREE.TorusGeometry(0.1, 0.02, 6, 14), glowMat, 0.22, -0.18, -0.48, Math.PI / 2, 0, 0);
       break;
-    case "weird":
-      add(new THREE.SphereGeometry(0.09, 10, 10), gunMat, 0.22, -0.2, -0.55);
-      add(new THREE.ConeGeometry(0.06, 0.35, 8), accentMat, 0.22, -0.18, -0.85, Math.PI / 2, 0, 0);
-      add(new THREE.TorusGeometry(0.08, 0.02, 6, 12), accentMat, 0.22, -0.14, -0.55);
+    }
+    case "weird": {
+      add(new THREE.SphereGeometry(0.1, 12, 12), gunMat, 0.22, -0.18, -0.54);
+      add(new THREE.ConeGeometry(0.07, 0.4, 10), accentMat, 0.22, -0.16, -0.9, Math.PI / 2, 0, 0);
+      add(new THREE.TorusGeometry(0.09, 0.022, 6, 14), glowMat, 0.22, -0.12, -0.54);
       break;
-    default:
-      add(new THREE.BoxGeometry(0.11, 0.13, 0.52), gunMat, 0.22, -0.22, -0.55);
-      add(new THREE.BoxGeometry(0.045, 0.045, 0.42), accentMat, 0.22, -0.175, -0.92);
-      add(new THREE.BoxGeometry(0.09, 0.11, 0.2), gunMat, 0.22, -0.255, -0.28);
-      add(new THREE.BoxGeometry(0.06, 0.14, 0.08), accentMat, 0.22, -0.32, -0.55);
+    }
+    default: {
+      add(new THREE.BoxGeometry(0.12, 0.14, 0.56), gunMat, 0.22, -0.2, -0.56);
+      add(new THREE.BoxGeometry(0.05, 0.05, 0.46), accentMat, 0.22, -0.15, -0.96);
+      add(new THREE.BoxGeometry(0.1, 0.12, 0.22), gunMat, 0.22, -0.26, -0.28);
+      add(new THREE.BoxGeometry(0.065, 0.16, 0.09), accentMat, 0.22, -0.34, -0.52);
+      add(new THREE.BoxGeometry(0.06, 0.04, 0.1), glowMat, 0.22, -0.1, -0.42);
       break;
+    }
   }
   return root;
 }
@@ -370,13 +544,18 @@ export function createEffects(
   let activeWeapon: WeaponDef | null = null;
   let muzzleUntil = 0;
   let kick = 0;
+  let kickYaw = 0;
+  let kickRoll = 0;
   let fovKick = 0;
   let bobTime = 0;
   let adsBlend = 0;
   let sprintBlend = 0;
   let spinT = 0;
-  /** 1 → 0 melee swing progress. */
+  /** 1 → 0 melee / special swing progress. */
   let swingT = 0;
+  let pumpT = 0;
+  let boltT = 0;
+  let shotAnimProfile: WeaponAnimProfile = "kick";
   /** 0..1 reload progress while reloading. */
   let reloadBlend = 0;
   let wasReloadingFx = false;
@@ -421,6 +600,7 @@ export function createEffects(
         return;
       }
       if (style.shape === "melee") glb.userData.melee = true;
+      glb.userData.animProfile = resolveAnimProfile(weapon);
       replaceViewmodel(glb);
     });
   }
@@ -494,32 +674,36 @@ export function createEffects(
     } else if (fxStyle.tracerStyle === "chunk") {
       const dir = b.clone().sub(a);
       const len = Math.min(dir.length() || 0.01, 8);
+      const meme = !!weaponId?.startsWith("gg_");
+      const r =
+        weaponId === "gg_pea" ? 0.1 : weaponId === "gg_banana_peel" ? 0.16 : meme ? 0.18 : 0.12;
       const mesh = new THREE.Mesh(
-        new THREE.SphereGeometry(
-          weaponId === "gg_pea" ? 0.06 : 0.12,
-          8,
-          8,
-        ),
+        new THREE.SphereGeometry(r, 10, 10),
         new THREE.MeshBasicMaterial({
           color,
           transparent: true,
-          opacity: 0.95,
+          opacity: 0.98,
           depthWrite: false,
         }),
       );
       // Place "projectile" partway along the path for a chunky look
       mesh.position.copy(a).lerp(b, 0.45);
-      mesh.scale.set(1, 0.75, 1.2);
+      mesh.scale.set(1.2, 0.85, 1.35);
       scene.add(mesh);
       obj = mesh;
       dispose = () => disposeMesh(mesh);
       // Also a short stub trail
       const stub = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.03, 0.05, Math.min(len * 0.25, 1.2), 6),
+        new THREE.CylinderGeometry(
+          meme ? 0.055 : 0.03,
+          meme ? 0.09 : 0.05,
+          Math.min(len * 0.35, meme ? 2.2 : 1.2),
+          6,
+        ),
         new THREE.MeshBasicMaterial({
           color,
           transparent: true,
-          opacity: 0.55,
+          opacity: 0.65,
           depthWrite: false,
         }),
       );
@@ -537,21 +721,23 @@ export function createEffects(
       });
     } else if (fxStyle.tracerStyle === "bubble") {
       const group = new THREE.Group();
-      const n = 5;
+      const n = 7;
       for (let i = 0; i < n; i++) {
-        const t = 0.15 + (i / (n - 1)) * 0.7;
+        const t = 0.1 + (i / (n - 1)) * 0.8;
         const p = a.clone().lerp(b, t);
         const soft = new THREE.Mesh(
-          new THREE.SphereGeometry(0.08 + Math.random() * 0.06, 8, 8),
+          new THREE.SphereGeometry(0.12 + Math.random() * 0.1, 10, 10),
           new THREE.MeshBasicMaterial({
             color,
             transparent: true,
-            opacity: 0.45,
+            opacity: 0.55,
             depthWrite: false,
             wireframe: i % 2 === 0,
           }),
         );
         soft.position.copy(p);
+        soft.position.x += (Math.random() - 0.5) * 0.15;
+        soft.position.y += (Math.random() - 0.5) * 0.12;
         group.add(soft);
       }
       scene.add(group);
@@ -609,13 +795,15 @@ export function createEffects(
     } else if (fxStyle.tracerStyle === "thick" || fxStyle.tracerStyle === "beam") {
       const dir = b.clone().sub(a);
       const len = dir.length() || 0.01;
-      const radius = fxStyle.tracerStyle === "beam" ? 0.035 : 0.055;
+      const meme = !!weaponId?.startsWith("gg_");
+      const radius =
+        (fxStyle.tracerStyle === "beam" ? 0.035 : 0.055) * (meme ? 1.85 : 1);
       const mesh = new THREE.Mesh(
-        new THREE.CylinderGeometry(radius, radius * 0.7, len, 6),
+        new THREE.CylinderGeometry(radius, radius * 0.7, len, 8),
         new THREE.MeshBasicMaterial({
           color,
           transparent: true,
-          opacity: 0.92,
+          opacity: 0.95,
           depthWrite: false,
         }),
       );
@@ -629,25 +817,28 @@ export function createEffects(
       dispose = () => disposeMesh(mesh);
     } else if (fxStyle.tracerStyle === "dots") {
       const group = new THREE.Group();
-      const n = weaponId === "gg_bees" ? 12 : 8;
+      const n = weaponId === "gg_bees" ? 16 : weaponId === "gg_confetti" ? 14 : 10;
       for (let i = 0; i < n; i++) {
         const t = i / (n - 1);
         const p = a.clone().lerp(b, t);
-        // Bees buzz off the center line
-        if (weaponId === "gg_bees") {
-          p.x += Math.sin(now * 0.02 + i) * 0.12;
-          p.y += Math.cos(now * 0.03 + i * 1.7) * 0.1;
+        // Bees / confetti buzz off the center line
+        if (weaponId === "gg_bees" || weaponId === "gg_confetti" || weaponId === "gg_disco") {
+          p.x += Math.sin(now * 0.02 + i * 1.3) * 0.22;
+          p.y += Math.cos(now * 0.03 + i * 1.7) * 0.18;
         }
         const soft = new THREE.Mesh(
-          new THREE.SphereGeometry(weaponId === "gg_bees" ? 0.05 : 0.04, 6, 6),
+          weaponId === "gg_confetti"
+            ? new THREE.BoxGeometry(0.08, 0.04, 0.08)
+            : new THREE.SphereGeometry(weaponId === "gg_bees" ? 0.07 : 0.055, 6, 6),
           new THREE.MeshBasicMaterial({
             color: tracerColor(fxStyle, weaponId),
             transparent: true,
-            opacity: 0.85,
+            opacity: 0.9,
             depthWrite: false,
           }),
         );
         soft.position.copy(p);
+        if (weaponId === "gg_confetti") soft.rotation.set(Math.random(), Math.random(), Math.random());
         group.add(soft);
       }
       scene.add(group);
@@ -673,6 +864,27 @@ export function createEffects(
         geo.dispose();
         mat.dispose();
       };
+    } else if (weaponId?.startsWith("gg_")) {
+      // Meme fallback: fat cylinder streak (webgl ignores Line linewidth)
+      const dir = b.clone().sub(a);
+      const len = dir.length() || 0.01;
+      const mesh = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.045, 0.028, len, 6),
+        new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity: 0.95,
+          depthWrite: false,
+        }),
+      );
+      mesh.position.copy(a).add(b).multiplyScalar(0.5);
+      mesh.quaternion.setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0),
+        dir.clone().normalize(),
+      );
+      scene.add(mesh);
+      obj = mesh;
+      dispose = () => disposeMesh(mesh);
     } else {
       const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
       const mat = new THREE.LineBasicMaterial({
@@ -798,6 +1010,145 @@ export function createEffects(
     }
   }
 
+  /** Splash / rocket / noodle — client travel presentation (server stays hitscan). */
+  function wantsTravelProjectile(weapon?: WeaponDef | null): boolean {
+    if (!weapon) return false;
+    const style = resolveFireStyle(weapon);
+    return (
+      style === "splash" ||
+      style === "rocket" ||
+      weapon.id === "gg_noodle"
+    );
+  }
+
+  function spawnTravelProjectile(
+    ox: number,
+    oy: number,
+    oz: number,
+    ex: number,
+    ey: number,
+    ez: number,
+    now: number,
+    fxStyle: WeaponFx,
+    weapon: WeaponDef,
+    hitPlayer: boolean,
+  ): void {
+    const dist = Math.hypot(ex - ox, ey - oy, ez - oz);
+    const life = Math.min(
+      0.55,
+      (resolveFireStyle(weapon) === "rocket" ? 0.22 : 0.18) + dist * 0.01,
+    );
+    const isZig = fxStyle.tracerStyle === "zigzag" || weapon.id === "gg_thunder";
+    const isRocket = resolveFireStyle(weapon) === "rocket";
+    const id = weapon.id;
+    let geo: THREE.BufferGeometry;
+    if (id === "gg_potato") geo = new THREE.SphereGeometry(0.18, 10, 10);
+    else if (id === "gg_noodle") geo = new THREE.TorusGeometry(0.1, 0.04, 6, 12);
+    else if (id === "gg_thunder") geo = new THREE.OctahedronGeometry(0.16, 0);
+    else if (isZig) geo = new THREE.OctahedronGeometry(0.14, 0);
+    else if (isRocket) geo = new THREE.CylinderGeometry(0.07, 0.12, 0.42, 8);
+    else geo = new THREE.SphereGeometry(0.14, 10, 10);
+    const mesh = new THREE.Mesh(
+      geo,
+      new THREE.MeshBasicMaterial({
+        color: fxStyle.tracer,
+        transparent: true,
+        opacity: 0.98,
+        depthWrite: false,
+      }),
+    );
+    if (id === "gg_potato") mesh.scale.set(1.4, 0.9, 1.1);
+    if (isRocket || id === "gg_potato") {
+      mesh.quaternion.setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0),
+        new THREE.Vector3(ex - ox, ey - oy, ez - oz).normalize(),
+      );
+    }
+    mesh.position.set(ox, oy, oz);
+    scene.add(mesh);
+    // Bright trail ribbon behind the projectile
+    const trailPts = [new THREE.Vector3(ox, oy, oz), new THREE.Vector3(ox, oy, oz)];
+    const trailGeo = new THREE.BufferGeometry().setFromPoints(trailPts);
+    const trailMat = new THREE.LineBasicMaterial({
+      color: fxStyle.muzzle,
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false,
+    });
+    const trail = new THREE.Line(trailGeo, trailMat);
+    scene.add(trail);
+    const from = new THREE.Vector3(ox, oy, oz);
+    const to = new THREE.Vector3(ex, ey, ez);
+    const blast = weapon.explosionRadius ?? 0;
+    tracers.push({
+      obj: mesh,
+      born: now,
+      life,
+      tick: (age) => {
+        const t = Math.min(1, age / life);
+        const ease = t * t * (3 - 2 * t);
+        mesh.position.lerpVectors(from, to, ease);
+        if (isZig) {
+          mesh.position.y += Math.sin(t * Math.PI * 8) * 0.22;
+          mesh.position.x += Math.cos(t * Math.PI * 6) * 0.1;
+          mesh.rotation.x += 0.35;
+          mesh.rotation.z += 0.28;
+        } else {
+          mesh.rotation.y += 0.35;
+          mesh.rotation.x += 0.12;
+        }
+        trailPts[0]!.copy(from).lerp(to, Math.max(0, ease - 0.18));
+        trailPts[1]!.copy(mesh.position);
+        trailGeo.setFromPoints(trailPts);
+        const mat = mesh.material as THREE.MeshBasicMaterial;
+        mat.opacity = 0.98;
+        trailMat.opacity = 0.85 * (1 - t * 0.3);
+      },
+      onEnd: () => {
+        scene.remove(trail);
+        trailGeo.dispose();
+        trailMat.dispose();
+        if (blast > 0) {
+          spawnExplosion({ x: ex, y: ey, z: ez }, performance.now(), blast, fxStyle);
+        } else {
+          spawnImpact({ x: ex, y: ey, z: ez }, performance.now(), hitPlayer, fxStyle);
+        }
+      },
+      dispose: () => {
+        scene.remove(mesh);
+        mesh.geometry.dispose();
+        (mesh.material as THREE.Material).dispose();
+        scene.remove(trail);
+        trailGeo.dispose();
+        trailMat.dispose();
+      },
+    });
+  }
+
+  function ejectShell(now: number): void {
+    camera.updateMatrixWorld();
+    _muzzleLocal.lerpVectors(hipMuzzle, adsMuzzle, adsBlend);
+    _origin.copy(_muzzleLocal).applyMatrix4(camera.matrixWorld);
+    const right = new THREE.Vector3(1, 0, 0).transformDirection(camera.matrixWorld);
+    const up = new THREE.Vector3(0, 1, 0).transformDirection(camera.matrixWorld);
+    const mesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.012, 0.012, 0.04, 5),
+      new THREE.MeshBasicMaterial({ color: 0xe8c76a }),
+    );
+    mesh.position.copy(_origin).addScaledVector(right, 0.08).addScaledVector(up, 0.02);
+    scene.add(mesh);
+    sparks.push({
+      mesh,
+      vel: right
+        .clone()
+        .multiplyScalar(2.2 + Math.random())
+        .addScaledVector(up, 1.6 + Math.random())
+        .addScaledVector(_fwd.set(0, 0, -1).transformDirection(camera.matrixWorld), -0.4),
+      born: now,
+      life: 0.35,
+    });
+  }
+
   function localShot(
     end: Vec3,
     now: number,
@@ -818,54 +1169,95 @@ export function createEffects(
     if (len < 0.5) _end.copy(_origin).addScaledVector(_fwd, isMelee ? 4 : 40);
     else _end.set(end.x, end.y, end.z);
 
-    spawnTracer(
-      _origin.x,
-      _origin.y,
-      _origin.z,
-      _end.x,
-      _end.y,
-      _end.z,
-      now,
-      fxStyle,
-      weapon?.id,
-    );
-
-    const blast = weapon?.explosionRadius;
-    if (blast != null && blast > 0) {
-      spawnExplosion(
-        { x: _end.x, y: _end.y, z: _end.z },
+    const travel = wantsTravelProjectile(weapon);
+    if (travel && weapon) {
+      spawnTravelProjectile(
+        _origin.x,
+        _origin.y,
+        _origin.z,
+        _end.x,
+        _end.y,
+        _end.z,
         now,
-        blast,
         fxStyle,
+        weapon,
+        false,
       );
     } else {
-      spawnImpact(
-        { x: _end.x, y: _end.y, z: _end.z },
+      spawnTracer(
+        _origin.x,
+        _origin.y,
+        _origin.z,
+        _end.x,
+        _end.y,
+        _end.z,
         now,
-        false,
         fxStyle,
+        weapon?.id,
       );
+      const blast = weapon?.explosionRadius;
+      if (blast != null && blast > 0) {
+        spawnExplosion(
+          { x: _end.x, y: _end.y, z: _end.z },
+          now,
+          blast,
+          fxStyle,
+        );
+      } else {
+        spawnImpact(
+          { x: _end.x, y: _end.y, z: _end.z },
+          now,
+          false,
+          fxStyle,
+        );
+      }
     }
 
     if (secondary) return;
 
+    shotAnimProfile = weapon ? resolveAnimProfile(weapon) : "kick";
+    kickYaw =
+      Math.min(weapon?.vmKickYaw ?? 0, 0.7) *
+      0.025 *
+      (Math.random() > 0.5 ? 1 : -1);
+    kickRoll = Math.min(weapon?.vmKickRoll ?? 0, 0.8) * 0.03;
+
     if (isMelee) {
       swingT = 1;
-      kick = 0.08 * fxStyle.kickScale;
-      fovKick = 2.8 * fxStyle.fovKickScale;
+      kick = Math.min(0.055, 0.04 * Math.min(fxStyle.kickScale, 1.5));
+      fovKick = Math.min(2.0, 1.4 * Math.min(fxStyle.fovKickScale, 1.4));
       muzzleFlash.visible = false;
       muzzleLight.intensity = 0;
       return;
     }
 
+    if (shotAnimProfile === "pump") pumpT = 1;
+    if (shotAnimProfile === "bolt") boltT = 1;
+    if (shotAnimProfile === "spin" || shotAnimProfile === "toss") swingT = 1;
+    if (weapon?.shellEject) ejectShell(now);
+
     muzzleUntil = now + 55 + fxStyle.flashScale * 20;
-    kick = 0.055 * fxStyle.kickScale * (1 - adsBlend * 0.4);
-    fovKick = 2.2 * fxStyle.fovKickScale * (1 - adsBlend * 0.5);
+    const kickMul =
+      shotAnimProfile === "punch" || shotAnimProfile === "toss"
+        ? 1.1
+        : shotAnimProfile === "spray"
+          ? 0.7
+          : 1;
+    // Soft recoil — never let high kickScale send the gun out of frame
+    const kScale = Math.min(fxStyle.kickScale, 1.5);
+    kick = Math.min(
+      0.048,
+      0.028 * kScale * kickMul * (1 - adsBlend * 0.4),
+    );
+    fovKick = Math.min(
+      2.0,
+      1.0 * Math.min(fxStyle.fovKickScale, 1.6) * (1 - adsBlend * 0.5),
+    );
     muzzleFlash.visible = adsBlend < 0.85;
     muzzleFlash.material.rotation = Math.random() * Math.PI;
     flashMat.color.setHex(fxStyle.muzzle);
     muzzleLight.color.setHex(fxStyle.muzzle);
-    spinT += 0.8 * fxStyle.kickScale;
+    spinT += 0.45 * kScale;
   }
 
   function remoteShot(
@@ -876,6 +1268,21 @@ export function createEffects(
     weapon?: WeaponDef | null,
   ): void {
     const fxStyle = weapon ? defaultWeaponFx(weapon) : style;
+    if (weapon && wantsTravelProjectile(weapon)) {
+      spawnTravelProjectile(
+        origin.x,
+        origin.y,
+        origin.z,
+        end.x,
+        end.y,
+        end.z,
+        now,
+        fxStyle,
+        weapon,
+        hitPlayer,
+      );
+      return;
+    }
     spawnTracer(
       origin.x,
       origin.y,
@@ -955,9 +1362,13 @@ export function createEffects(
     headBobY = Math.abs(Math.sin(bobTime * 2)) * headAmp;
     headBobRoll = Math.sin(bobTime) * headAmp * 0.55;
 
-    kick = Math.max(0, kick - dt * 0.45);
+    kick = Math.max(0, kick - dt * 0.5);
+    kickYaw *= Math.max(0, 1 - dt * 9);
+    kickRoll *= Math.max(0, 1 - dt * 8);
     fovKick = Math.max(0, fovKick - dt * 8);
-    spinT *= Math.max(0, 1 - dt * 4);
+    spinT *= Math.max(0, 1 - dt * 4.5);
+    if (pumpT > 0) pumpT = Math.max(0, pumpT - dt * 3.5);
+    if (boltT > 0) boltT = Math.max(0, boltT - dt * 3);
 
     // Reload pose: pull gun down/in, tilt + mag-swap roll
     const rb = reloadBlend;
@@ -970,57 +1381,142 @@ export function createEffects(
         ? Math.sin(((reloadPhase - 0.55) / 0.3) * Math.PI) * 0.12
         : 0;
 
-    // Melee swing: cock back → arc through → settle
-    if (swingT > 0) swingT = Math.max(0, swingT - dt * 4.2);
+    if (swingT > 0) {
+      const swingSpeed =
+        shotAnimProfile === "slam" ? 3.2 : shotAnimProfile === "spin" ? 5.5 : 4.2;
+      swingT = Math.max(0, swingT - dt * swingSpeed);
+    }
     const st = swingT;
-    const swingArc = Math.sin((1 - st) * Math.PI); // peaks mid-swing
-    const swingProgress = 1 - st; // 0 → 1
+    const swingArc = Math.sin((1 - st) * Math.PI);
+    const swingProgress = 1 - st;
     const isMeleeVm =
       !!viewmodel.userData.melee || style.shape === "melee";
-    const slap = activeWeapon?.id === "gg_slap";
+    const profile = shotAnimProfile;
     let swingX = 0;
     let swingY = 0;
     let swingZ = 0;
     let swingRx = 0;
     let swingRy = 0;
     let swingRz = 0;
-    if (isMeleeVm && st > 0) {
-      if (slap) {
-        // Forward open-hand slap
-        swingZ = -swingArc * 0.45;
-        swingY = swingArc * 0.12;
-        swingRx = -0.35 - swingArc * 1.1;
-        swingRy = -0.2 + swingProgress * 0.4;
-      } else {
-        // Overhead / baseball swing for hammers & board
-        swingX = -0.15 + swingProgress * 0.55;
-        swingY = 0.2 - swingArc * 0.35;
-        swingZ = -swingArc * 0.25;
-        swingRx = -0.9 + swingProgress * 1.6;
-        swingRz = -0.8 + swingProgress * 1.7;
+    const memeVm = !!viewmodel.userData.meme;
+    if (st > 0) {
+      if (isMeleeVm && profile === "slash") {
+        swingZ = -swingArc * 0.32;
+        swingY = swingArc * 0.08;
+        swingX = swingArc * 0.07;
+        swingRx = -0.15 - swingArc * 0.55;
+        swingRy = -0.2 + swingProgress * 0.55;
+        swingRz = swingArc * 0.35;
+      } else if (isMeleeVm && profile === "slam") {
+        swingX = -0.06 + swingProgress * 0.22;
+        swingY = 0.12 - swingArc * 0.22;
+        swingZ = -swingArc * 0.1;
+        swingRx = -0.55 + swingProgress * 1.0;
+        swingRz = -0.28 + swingProgress * 0.6;
+        swingRy = swingArc * 0.1;
+      } else if (isMeleeVm) {
+        swingX = -0.08 + swingProgress * 0.28;
+        swingY = 0.1 - swingArc * 0.18;
+        swingZ = -swingArc * 0.12;
+        swingRx = -0.45 + swingProgress * 0.85;
+        swingRz = -0.4 + swingProgress * 0.85;
+        swingRy = swingArc * 0.18;
+      } else if (profile === "spin") {
+        // Slight twist only — spinning the whole VM looks like it flew away
         swingRy = swingArc * 0.35;
+        swingRz = swingArc * 0.12;
+      } else if (profile === "toss") {
+        swingZ = 0.04 - swingArc * 0.12;
+        swingY = swingArc * 0.05;
+        swingRx = 0.12 - swingArc * 0.4;
       }
     }
 
-    const adsX = THREE.MathUtils.lerp(0.22, 0.0, adsBlend) - 0.22;
-    const adsY = THREE.MathUtils.lerp(0, 0.08, adsBlend);
-    const adsZ = THREE.MathUtils.lerp(0, 0.28, adsBlend);
+    // Procedural part motion — relative to rest pose (absolute z was yanking meshes)
+    const parts = viewmodel.userData.animParts as
+      | Record<string, THREE.Object3D>
+      | undefined;
+    if (parts?.pump) {
+      if (parts.pump.userData.baseZ == null) parts.pump.userData.baseZ = parts.pump.position.z;
+      parts.pump.position.z = parts.pump.userData.baseZ - pumpT * 0.1;
+    }
+    if (parts?.bolt) {
+      if (parts.bolt.userData.baseZ == null) parts.bolt.userData.baseZ = parts.bolt.position.z;
+      parts.bolt.position.z = parts.bolt.userData.baseZ + boltT * 0.1;
+    }
+    if (parts?.bellows) {
+      parts.bellows.scale.z = 1 + pumpT * 0.4 + Math.sin(now * 0.008) * 0.04;
+    }
+    if (parts?.wing) {
+      parts.wing.rotation.z = Math.sin(now * 0.025 + spinT) * 0.35 + swingArc * 0.25;
+    }
+    if (parts?.ball) {
+      parts.ball.rotation.y += dt * 4;
+      parts.ball.rotation.x += dt * 1.4;
+      const mat = (parts.ball as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+      if (mat?.emissive) {
+        mat.emissiveIntensity = 0.6 + Math.sin(now * 0.01) * 0.35;
+      }
+    }
+    if (parts?.cone) {
+      const pulse = 1 + Math.sin(now * 0.014) * 0.1;
+      parts.cone.scale.setScalar(pulse);
+    }
+    if (parts?.nozzle) {
+      parts.nozzle.rotation.z = Math.sin(now * 0.025) * 0.14;
+    }
+    if (parts?.barrel) {
+      parts.barrel.rotation.z = Math.sin(now * 0.03 + spinT) * (kick > 0.01 ? 0.1 : 0.03);
+    }
+    if (parts?.potato) {
+      parts.potato.rotation.x += dt * (1.0 + kick * 6);
+    }
+    if (parts?.haft) {
+      parts.haft.rotation.z = swingArc * 0.06;
+    }
+
+    const sprayJitter =
+      profile === "spray" && kick > 0.01
+        ? Math.sin(now * 0.08) * kick * 1.4
+        : 0;
+
+    const rest = (viewmodel.userData.rest as
+      | { x: number; y: number; z: number; rx: number; ry: number; rz: number }
+      | undefined) ?? { x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0 };
+    const breathe = memeVm ? Math.sin(now * 0.004) * 0.005 : 0;
+
+    // On ADS: center iron sights for real guns; drop meme guns out of FOV fast
+    const adsX = THREE.MathUtils.lerp(0.22, memeVm ? 0.35 : 0.0, adsBlend) - 0.22;
+    const adsY = THREE.MathUtils.lerp(0, memeVm ? -0.45 : 0.08, adsBlend);
+    const adsZ = THREE.MathUtils.lerp(0, memeVm ? 0.55 : 0.28, adsBlend);
     viewmodel.position.set(
-      bobX + adsX + magWiggle * 0.04 + swingX,
-      -kick + bobY + adsY - rb * 0.14 - rack * 0.05 + swingY,
-      kick * 0.4 + adsZ + rb * 0.1 + swingZ,
+      rest.x + bobX + adsX + magWiggle * 0.04 + swingX + kickYaw + sprayJitter * 0.006 + breathe,
+      rest.y - kick + bobY + adsY - rb * 0.14 - rack * 0.05 + swingY,
+      rest.z + kick * 0.28 + adsZ + rb * 0.1 + swingZ + pumpT * 0.03 + boltT * 0.04,
     );
     viewmodel.rotation.x =
-      -kick * 1.8 - adsBlend * 0.02 - rb * 0.55 - rack + swingRx;
+      rest.rx -
+      kick * 1.25 -
+      adsBlend * (memeVm ? 0.55 : 0.02) -
+      rb * 0.55 -
+      rack +
+      swingRx -
+      boltT * 0.1;
     viewmodel.rotation.y =
-      -adsBlend * 0.04 + spinT * 0.05 + magWiggle * 0.35 + swingRy;
+      rest.ry - adsBlend * 0.04 + spinT * 0.03 + magWiggle * 0.35 + swingRy + kickYaw * 2.5;
     viewmodel.rotation.z =
+      rest.rz +
       bobX * 2.4 +
-      kick * 0.3 * style.kickScale +
+      kick * 0.18 * Math.min(style.kickScale, 1.5) +
       magWiggle * 0.5 -
       rb * 0.15 +
-      swingRz;
-    viewmodel.visible = alive && !(opts.hideViewmodel && adsBlend > 0.55 && !reloading);
+      swingRz +
+      kickRoll +
+      sprayJitter * 0.08;
+    // Hide bulky ADS guns early so zoom isn't blocked mid-blend
+    const adsHideAt = memeVm || opts.hideViewmodel ? 0.28 : 0.55;
+    viewmodel.visible =
+      alive && !(opts.hideViewmodel && adsBlend > adsHideAt && !reloading);
 
     // Sprint: slight zoom-in (narrow FOV) for a forward rush feel
     const sprintFov = baseFov - 6.5 * sprintBlend;
@@ -1041,15 +1537,19 @@ export function createEffects(
     for (let i = tracers.length - 1; i >= 0; i--) {
       const t = tracers[i]!;
       const age = (now - t.born) / 1000;
-      t.obj.traverse((c) => {
-        if (c instanceof THREE.Mesh || c instanceof THREE.Line) {
-          const mat = c.material as THREE.Material & { opacity?: number };
-          if (mat.opacity != null) {
-            mat.opacity = Math.max(0, 1 - age / t.life);
+      if (t.tick) t.tick(age, dt);
+      else {
+        t.obj.traverse((c) => {
+          if (c instanceof THREE.Mesh || c instanceof THREE.Line) {
+            const mat = c.material as THREE.Material & { opacity?: number };
+            if (mat.opacity != null) {
+              mat.opacity = Math.max(0, 1 - age / t.life);
+            }
           }
-        }
-      });
+        });
+      }
       if (age >= t.life) {
+        t.onEnd?.();
         t.dispose();
         tracers.splice(i, 1);
       }

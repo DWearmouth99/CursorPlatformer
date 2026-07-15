@@ -66,8 +66,11 @@ function onMessage(ws: WebSocket, session: Session | null, raw: string): void {
   if (msg.type === "join") {
     if (session) return;
     const player = lobby.spawnPlayer(ws);
+    // syncBots runs inside spawnPlayer (fill/replace AI seats)
     console.log(
-      `[server] joined gun_game as ${player.id} (players=${lobby.players.size})`,
+      `[server] joined gun_game as ${player.id} (players=${lobby.players.size} bots=${
+        [...lobby.players.values()].filter((p) => p.isBot).length
+      })`,
     );
     return;
   }
