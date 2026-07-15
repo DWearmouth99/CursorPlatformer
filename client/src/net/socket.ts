@@ -11,14 +11,23 @@ export type NetHandlers = {
   onMessage: (msg: ServerMsg) => void;
 };
 
+/** Prefer VITE_WS_URL (split deploy); otherwise same-origin / localhost helper. */
+export function clientWsUrl(): string {
+  const fromEnv = import.meta.env.VITE_WS_URL;
+  if (typeof fromEnv === "string" && fromEnv.trim()) {
+    return fromEnv.trim();
+  }
+  return resolveWsUrl();
+}
+
 /**
  * Manual connect — call connect() after the player hits Play.
- * Auto-reconnect only after a successful join (enableReconnect).
+ * Retries until close() so Render cold-starts can wake up.
  */
-export function createGameSocket(handlers: NetHandlers, url = resolveWsUrl()) {
+export function createGameSocket(handlers: NetHandlers, url = clientWsUrl()) {
   let ws: WebSocket | null = null;
   let closed = false;
-  let reconnect = false;
+  let reconnect = true;
 
   function connect() {
     if (closed) return;
@@ -29,7 +38,7 @@ export function createGameSocket(handlers: NetHandlers, url = resolveWsUrl()) {
     ) {
       return;
     }
-    const target = url || resolveWsUrl();
+    const target = url || clientWsUrl();
     console.log(`[net] connecting ${target}`);
     ws = new WebSocket(target);
 
@@ -45,7 +54,7 @@ export function createGameSocket(handlers: NetHandlers, url = resolveWsUrl()) {
     ws.addEventListener("close", () => {
       handlers.onClose?.();
       if (!closed && reconnect) {
-        setTimeout(connect, 1200);
+        setTimeout(connect, 1500);
       }
     });
 
@@ -56,9 +65,7 @@ export function createGameSocket(handlers: NetHandlers, url = resolveWsUrl()) {
 
   return {
     connect,
-    enableReconnect() {
-      reconnect = true;
-    },
+    url,
     send(msg: ClientMsg) {
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(msg));

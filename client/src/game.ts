@@ -106,6 +106,10 @@ export async function startGame(container: HTMLElement) {
         overlayHint.textContent = "Disconnected — reconnecting…";
         overlay.classList.remove("hidden");
         welcomed = false;
+      } else {
+        overlayHint.textContent =
+          `Connecting to ${socket.url}…\n(Free hosts can take up to a minute to wake)`;
+        overlay.classList.remove("hidden");
       }
     },
     onMessage(msg) {
@@ -115,7 +119,6 @@ export async function startGame(container: HTMLElement) {
         classId = msg.classId;
         serverTick = msg.tick;
         welcomed = true;
-        socket.enableReconnect();
         latestPlayers = msg.players;
         const self = msg.players.find((p) => p.id === localId);
         const cls = getClass(classId);
@@ -181,6 +184,8 @@ export async function startGame(container: HTMLElement) {
     },
   });
 
+  overlayHint.textContent =
+    `Connecting to ${socket.url}…\n(Free hosts can take up to a minute to wake)`;
   socket.connect();
 
   function requestLock() {

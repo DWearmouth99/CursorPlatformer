@@ -9,12 +9,23 @@ Browser-based multiplayer FPS foundation (Counter-Strike–inspired): Three.js c
 
 ## Deploy (Render)
 
-One Web Service can host both the static client and the WebSocket server. **Do not use Vercel** — it does not support a long-lived WebSocket game server.
+One Web Service can host both the static client and the WebSocket server.
 
 - **Root directory:** leave blank (repo root), not `server/` or `client/`
 - **Build command:** `npm install && npm run build`
 - **Start command:** `npm start`
-- **URL:** the site origin (e.g. `https://cursorplatformer.onrender.com`) — the client auto-connects over `wss://` to the same host.
+- **Play at:** `https://cursorplatformer.onrender.com` (same origin — WebSocket works automatically)
+
+### Client on Vercel + server on Render
+
+Vercel can only host the static client. Point it at Render with:
+
+```bash
+# client/.env.production (or Vercel env var)
+VITE_WS_URL=wss://cursorplatformer.onrender.com
+```
+
+Redeploy the Vercel app after setting that. The game server must still run on Render (`npm start`).
 
 Locally the Vite app still uses `ws://localhost:3001`.
 
