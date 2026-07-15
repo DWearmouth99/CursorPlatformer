@@ -30,15 +30,46 @@
             <button type="button" id="play-btn" class="play-btn">Enter Match</button>
           </aside>
         </div>
-        <p class="menu-help">WASD · Mouse · Space · Ctrl · LMB · RMB · Q/E lean · R reload · 1/2 abilities · C swap class · Tab scores</p>
+        <p class="menu-help">WASD · Mouse · Space · C crouch · LMB · RMB · Q/E lean · R reload · 1/2 abilities · V swap class · Tab scores · Esc pause · <a href="/editor.html">Level editor</a></p>
       </div>
     </div>
 
     <div id="class-swap" class="hidden">
       <div class="class-swap-panel">
         <h2>Change Class</h2>
-        <p class="class-swap-hint">12s cooldown between swaps · press C to close</p>
+        <p class="class-swap-hint">12s cooldown between swaps · press V to close</p>
         <div id="class-swap-grid" class="class-grid"></div>
+      </div>
+    </div>
+
+    <div id="pause-menu" class="hidden">
+      <div class="pause-backdrop"></div>
+      <div class="pause-shell">
+        <div id="pause-panel-main" class="pause-panel">
+          <h2>Paused</h2>
+          <button type="button" id="pause-resume" class="pause-btn">Resume</button>
+          <button type="button" id="pause-settings" class="pause-btn">Settings</button>
+          <button type="button" id="pause-mainmenu" class="pause-btn pause-btn-danger">Main Menu</button>
+          <p class="pause-hint">Esc to resume · C crouch · V class · fullscreen stays on</p>
+        </div>
+        <div id="pause-panel-settings" class="pause-panel hidden">
+          <h2>Settings</h2>
+          <label class="pause-setting">
+            <span>Mouse sensitivity</span>
+            <div class="pause-setting-row">
+              <input id="setting-sens" type="range" min="0.2" max="3" step="0.05" />
+              <b id="setting-sens-val">1.00×</b>
+            </div>
+          </label>
+          <label class="pause-setting">
+            <span>Master volume</span>
+            <div class="pause-setting-row">
+              <input id="setting-vol" type="range" min="0" max="1" step="0.05" />
+              <b id="setting-vol-val">85%</b>
+            </div>
+          </label>
+          <button type="button" id="pause-settings-back" class="pause-btn">Back</button>
+        </div>
       </div>
     </div>
 
@@ -46,7 +77,7 @@
       <div class="panel">
         <h1>Cursor FPS</h1>
         <p id="overlay-hint">Connecting…</p>
-        <p class="hint">Click the canvas to capture the mouse</p>
+        <p class="hint">Click to play (enters fullscreen) · Esc pauses</p>
       </div>
     </div>
 
@@ -76,7 +107,12 @@
         <span class="ch ch-w"></span>
         <span class="ch-dot"></span>
       </div>
-      <div id="hit-marker"></div>
+      <div id="hit-marker" aria-hidden="true">
+        <span class="hm hm-tl"></span>
+        <span class="hm hm-tr"></span>
+        <span class="hm hm-bl"></span>
+        <span class="hm hm-br"></span>
+      </div>
       <div id="damage-flash"></div>
       <div id="kill-feed"></div>
       <div id="hud-bottom">

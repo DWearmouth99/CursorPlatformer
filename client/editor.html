@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cursor FPS — Level Editor</title>
+    <link rel="stylesheet" href="/src/editor/editor.css" />
+  </head>
+  <body>
+    <div id="editor-root">
+      <aside id="palette">
+        <header>
+          <h1>Level Editor</h1>
+          <a href="/">← Back to game</a>
+        </header>
+        <section>
+          <h2>Place</h2>
+          <div id="model-list"></div>
+        </section>
+        <section id="inspector" class="hidden">
+          <h2>Selected</h2>
+          <p id="sel-name" class="mono"></p>
+          <div id="insp-prop">
+            <label class="row">
+              <span>Solid (collision)</span>
+              <input type="checkbox" id="sel-solid" />
+            </label>
+            <label class="row">
+              <span>Scale</span>
+              <input type="range" id="sel-scale" min="0.5" max="8" step="0.1" />
+              <b id="sel-scale-val">4</b>
+            </label>
+            <label class="row">
+              <span>Height Y</span>
+              <input type="range" id="sel-y" min="-6" max="8" step="0.05" />
+              <b id="sel-y-val">0</b>
+            </label>
+            <button type="button" id="btn-ground-sel">Set selected to ground</button>
+          </div>
+          <div id="insp-spawn" class="hidden">
+            <p class="hint">Drag gizmo to move · Q/E rotate facing</p>
+            <button type="button" id="btn-spawn-ground">Set spawn to ground</button>
+          </div>
+          <button type="button" id="btn-delete" class="danger">Delete</button>
+        </section>
+        <section>
+          <h2>Tools</h2>
+          <label class="row">
+            <span>Grid snap</span>
+            <select id="grid-snap">
+              <option value="1">1 m</option>
+              <option value="2" selected>2 m</option>
+              <option value="4">4 m</option>
+              <option value="0">Off</option>
+            </select>
+          </label>
+          <label class="row">
+            <span>Show colliders</span>
+            <input type="checkbox" id="show-col" checked />
+          </label>
+          <button type="button" id="btn-ground-all">Set all to ground (−0.05)</button>
+          <button type="button" id="btn-spawn-t">Add T spawn here</button>
+          <button type="button" id="btn-spawn-ct">Add CT spawn here</button>
+          <button type="button" id="btn-clear" class="danger">Clear map</button>
+        </section>
+        <section>
+          <h2>File</h2>
+          <button type="button" id="btn-download" class="primary">Download grassareana.json</button>
+          <label class="file-btn">
+            Load JSON…
+            <input type="file" id="file-load" accept="application/json,.json" hidden />
+          </label>
+          <button type="button" id="btn-reset">Reload from /arenas/</button>
+          <p class="hint">
+            Download and save into<br />
+            <code>client/public/arenas/grassareana.json</code><br />
+            then restart the server.
+          </p>
+        </section>
+        <p id="status" class="status"></p>
+      </aside>
+      <div id="viewport">
+        <canvas id="c"></canvas>
+        <div id="hud-help">
+          RMB look · WASD fly · Space/Ctrl up/down · LMB place/select · Shift+LMB force place · drag gizmo to move
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/editor/main.ts"></script>
+  </body>
+</html>

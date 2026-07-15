@@ -14,4 +14,12 @@ export default defineConfig({
       "@fps/shared": path.resolve(root, "../shared/src/index.ts"),
     },
   },
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(root, "index.html"),
+        editor: path.resolve(root, "editor.html"),
+      },
+    },
+  },
 });

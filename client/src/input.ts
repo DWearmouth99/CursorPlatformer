@@ -15,18 +15,25 @@ const PITCH_LIMIT = Math.PI / 2 - 0.05;
 export function createInput(initialYaw = 0) {
   const look: LookState = { yaw: initialYaw, pitch: 0 };
   let sensMult = 1;
+  /** User setting from pause menu (relative to base). */
+  let userSens = 1;
   /** Smoothed lean -1..1 for rendering / network. */
   let lean = 0;
 
   function onKeyDown(e: KeyboardEvent) {
     keys.add(e.code);
-    if (
+    // Always suppress game keys while playing so Ctrl+R / Space / Tab
+    // don't refresh, scroll, or switch focus.
+    if (document.pointerLockElement != null) {
+      e.preventDefault();
+    } else if (
       e.code === "ControlLeft" ||
       e.code === "ControlRight" ||
       e.code === "Space" ||
       e.code === "Tab" ||
       e.code === "KeyQ" ||
-      e.code === "KeyE"
+      e.code === "KeyE" ||
+      e.code === "KeyR"
     ) {
       e.preventDefault();
     }
@@ -38,7 +45,7 @@ export function createInput(initialYaw = 0) {
 
   function onMouseMove(e: MouseEvent) {
     if (document.pointerLockElement == null) return;
-    const s = MOUSE_SENS * sensMult;
+    const s = MOUSE_SENS * userSens * sensMult;
     look.yaw -= e.movementX * s;
     look.pitch -= e.movementY * s;
     look.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, look.pitch));
@@ -87,7 +94,7 @@ export function createInput(initialYaw = 0) {
       left: keys.has("KeyA"),
       right: keys.has("KeyD"),
       jump: keys.has("Space"),
-      crouch: keys.has("ControlLeft") || keys.has("ControlRight"),
+      crouch: keys.has("KeyC"),
       fire: mouseLeft && locked,
       reload: keys.has("KeyR"),
       ads: mouseRight && locked,
@@ -125,12 +132,17 @@ export function createInput(initialYaw = 0) {
     sensMult = m;
   }
 
+  function setUserSens(m: number): void {
+    userSens = Math.max(0.2, Math.min(3, m));
+  }
+
   function isScoreboardOpen(): boolean {
     return keys.has("Tab");
   }
 
+  /** Class swap menu — V (C is crouch now). */
   function isClassMenuHeld(): boolean {
-    return keys.has("KeyC");
+    return keys.has("KeyV");
   }
 
   function keyDown(code: string): boolean {
@@ -150,6 +162,7 @@ export function createInput(initialYaw = 0) {
     updateLean,
     getLean,
     setAdsSensMult,
+    setUserSens,
     isScoreboardOpen,
     isClassMenuHeld,
     keyDown,

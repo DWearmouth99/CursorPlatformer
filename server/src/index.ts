@@ -4,19 +4,45 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, WebSocket } from "ws";
 import {
+  ACTIVE_ARENA_FILE,
   TICK_MS,
   buildArena,
   isClassId,
   isGameMode,
+  setActiveLevel,
   type ClientMsg,
   type GameMode,
+  type LevelFile,
 } from "@fps/shared";
 import { createLobby, type Lobby, type NetPlayer } from "./lobby.js";
 
 const PORT = Number(process.env.PORT ?? 3001);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIST = path.resolve(__dirname, "../../client/dist");
+const CLIENT_PUBLIC = path.resolve(__dirname, "../../client/public");
 
+function loadActiveArena(): void {
+  const candidates = [
+    path.join(CLIENT_PUBLIC, "arenas", ACTIVE_ARENA_FILE),
+    path.join(CLIENT_DIST, "arenas", ACTIVE_ARENA_FILE),
+  ];
+  for (const filePath of candidates) {
+    if (!fs.existsSync(filePath)) continue;
+    try {
+      const level = JSON.parse(fs.readFileSync(filePath, "utf8")) as LevelFile;
+      setActiveLevel(level);
+      console.log(`[server] arena: ${level.name ?? ACTIVE_ARENA_FILE} ← ${filePath}`);
+      return;
+    } catch (err) {
+      console.warn(`[server] failed to read ${filePath}`, err);
+    }
+  }
+  console.warn(
+    `[server] ${ACTIVE_ARENA_FILE} not found — using bundled default arena`,
+  );
+}
+
+loadActiveArena();
 const arena = buildArena();
 let nextId = 1;
 const allocId = () => String(nextId++);
@@ -82,6 +108,11 @@ const MIME: Record<string, string> = {
   ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".json": "application/json",
+  ".glb": "model/gltf-binary",
+  ".gltf": "model/gltf+json",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".ogg": "audio/ogg",
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",

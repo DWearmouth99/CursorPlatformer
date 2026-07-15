@@ -35,6 +35,9 @@ import { createEffects } from "./fx";
 import { createAudio } from "./audio";
 import { bindClassSwapMenu, showMainMenu } from "./menu";
 import { createAbilityView } from "./abilityView";
+import { bindPauseMenu } from "./pauseMenu";
+import { loadSettings } from "./settings";
+import { enterPlayMode, exitPlayMode, unlockGameKeys, shouldBlockBrowserShortcut } from "./browserLock";
 
 export async function startGame(container: HTMLElement) {
   const selection = await showMainMenu();
@@ -72,7 +75,9 @@ export async function startGame(container: HTMLElement) {
   );
   scene.add(camera);
 
-  const world = createWorld(scene);
+  overlayHint.textContent = "Loading nature map…";
+  const world = await createWorld(scene);
+  overlayHint.textContent = "Connecting to server…";
   const remotes = createRemotePlayers(scene);
   const abilityView = createAbilityView(scene);
   let classId: ClassId = selection.classId;
@@ -118,9 +123,31 @@ export async function startGame(container: HTMLElement) {
   const input = createInput(0);
   input.bind();
 
+  const initialSettings = loadSettings();
+  input.setUserSens(initialSettings.mouseSens);
+  audio.setVolume(initialSettings.volume);
+
   let classMenuWasDown = false;
   let requestClassChange: (id: ClassId) => void = () => {};
   const classSwap = bindClassSwapMenu((id) => requestClassChange(id));
+
+  const pauseMenu = bindPauseMenu({
+    onResume() {
+      overlay.classList.add("hidden");
+      audio.unlock();
+      void enterPlayMode();
+      renderer.domElement.requestPointerLock();
+    },
+    onMainMenu() {
+      exitPlayMode();
+      socket.close();
+      window.location.reload();
+    },
+    onSettingsChange(s) {
+      input.setUserSens(s.mouseSens);
+      audio.setVolume(s.volume);
+    },
+  });
   let localId: string | null = null;
   let localTeam: Team | null = null;
   let connected = false;
@@ -241,8 +268,16 @@ export async function startGame(container: HTMLElement) {
             input.look.pitch = self.pitch;
             localSpray = 0;
           }
-          if (wasAlive && !self.alive) audio.death();
-          if (!wasReloading && self.reloading) audio.reload();
+          if (wasAlive && !self.alive) {
+            audio.death();
+            audio.stopReload();
+          }
+          if (!wasReloading && self.reloading) {
+            audio.reload(activeWeapon().reloadMs);
+          }
+          if (wasReloading && !self.reloading) {
+            audio.stopReload();
+          }
           wasReloading = self.reloading;
           if (!self.alive) localSpray = 0;
         }
@@ -313,8 +348,9 @@ export async function startGame(container: HTMLElement) {
   socket.connect();
 
   function requestLock() {
-    if (!welcomed || classSwap.isOpen()) return;
+    if (!welcomed || classSwap.isOpen() || pauseMenu.isOpen()) return;
     audio.unlock();
+    void enterPlayMode();
     renderer.domElement.requestPointerLock();
   }
 
@@ -323,9 +359,44 @@ export async function startGame(container: HTMLElement) {
 
   document.addEventListener("pointerlockchange", () => {
     const locked = document.pointerLockElement === renderer.domElement;
-    overlay.classList.toggle("hidden", locked);
-    if (locked) audio.unlock();
+    if (locked) {
+      pauseMenu.setOpen(false);
+      overlay.classList.add("hidden");
+      audio.unlock();
+      void enterPlayMode();
+      return;
+    }
+    // Esc / unlock while in match → pause menu (not the click-to-play overlay).
+    unlockGameKeys();
+    if (welcomed && !classSwap.isOpen()) {
+      pauseMenu.setOpen(true);
+      overlay.classList.add("hidden");
+    } else {
+      overlay.classList.remove("hidden");
+    }
   });
+
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      if (shouldBlockBrowserShortcut(e)) {
+        e.preventDefault();
+        // Do not stopPropagation — input.ts still needs these keydowns.
+      }
+      if (e.code !== "Escape") return;
+      if (!welcomed) return;
+      if (classSwap.isOpen()) {
+        classSwap.setOpen(false);
+        return;
+      }
+      if (pauseMenu.isOpen()) {
+        e.preventDefault();
+        pauseMenu.setOpen(false);
+        requestLock();
+      }
+    },
+    true,
+  );
 
   window.addEventListener("resize", () => {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -454,7 +525,7 @@ export async function startGame(container: HTMLElement) {
     const weapon = activeWeapon();
     input.setAdsSensMult(buttons.ads ? weapon.adsSensMult : 1);
 
-    if (welcomed && !classSwap.isOpen()) {
+    if (welcomed && !classSwap.isOpen() && !pauseMenu.isOpen()) {
       tickAccum += frameDt;
       let steps = 0;
       while (tickAccum >= TICK_DT && steps < MAX_CLIENT_CATCHUP_TICKS) {
@@ -492,6 +563,8 @@ export async function startGame(container: HTMLElement) {
       ads,
       adsFov: weapon.adsFov,
       hideViewmodel: weapon.scopeStyle === "sniper",
+      reloading: localReloading,
+      reloadMs: weapon.reloadMs,
     });
 
     // Scope overlays

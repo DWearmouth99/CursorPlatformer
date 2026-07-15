@@ -175,6 +175,10 @@ export function createEffects(
   let bobTime = 0;
   let adsBlend = 0;
   let spinT = 0;
+  /** 0..1 reload progress while reloading. */
+  let reloadBlend = 0;
+  let wasReloadingFx = false;
+  let reloadPhase = 0;
 
   const _muzzleLocal = new THREE.Vector3(0.22, -0.16, -1.05);
   const _origin = new THREE.Vector3();
@@ -423,11 +427,32 @@ export function createEffects(
       ads: boolean;
       adsFov: number;
       hideViewmodel: boolean;
+      reloading?: boolean;
+      reloadMs?: number;
     },
   ): void {
     adsBlend += ((opts.ads ? 1 : 0) - adsBlend) * Math.min(1, dt * 14);
 
-    const hipBobMul = 1 - adsBlend;
+    const reloading = !!(opts.reloading && alive);
+    if (reloading && !wasReloadingFx) {
+      reloadPhase = 0;
+      reloadBlend = 0;
+    }
+    wasReloadingFx = reloading;
+    if (reloading) {
+      const dur = Math.max(0.25, (opts.reloadMs ?? 2000) / 1000);
+      reloadPhase = Math.min(1, reloadPhase + dt / dur);
+      // Smooth envelope: dive → work → recover
+      const p = reloadPhase;
+      const dive = p < 0.22 ? p / 0.22 : 1;
+      const recover = p > 0.72 ? 1 - (p - 0.72) / 0.28 : 1;
+      reloadBlend = Math.min(dive, recover);
+    } else {
+      reloadBlend = Math.max(0, reloadBlend - dt * 6);
+      if (reloadBlend < 0.01) reloadBlend = 0;
+    }
+
+    const hipBobMul = (1 - adsBlend) * (1 - reloadBlend * 0.7);
     bobTime += dt * (moving ? 10 : 2);
     const bobX = moving ? Math.sin(bobTime) * 0.008 * hipBobMul : 0;
     const bobY =
@@ -439,14 +464,30 @@ export function createEffects(
     fovKick = Math.max(0, fovKick - dt * 8);
     spinT *= Math.max(0, 1 - dt * 4);
 
+    // Reload pose: pull gun down/in, tilt + mag-swap roll
+    const rb = reloadBlend;
+    const magWiggle =
+      reloading && reloadPhase > 0.2 && reloadPhase < 0.75
+        ? Math.sin((reloadPhase - 0.2) * Math.PI * 3) * 0.22
+        : 0;
+    const rack =
+      reloading && reloadPhase > 0.55 && reloadPhase < 0.85
+        ? Math.sin(((reloadPhase - 0.55) / 0.3) * Math.PI) * 0.12
+        : 0;
+
     const adsX = THREE.MathUtils.lerp(0.22, 0.0, adsBlend) - 0.22;
     const adsY = THREE.MathUtils.lerp(0, 0.08, adsBlend);
     const adsZ = THREE.MathUtils.lerp(0, 0.28, adsBlend);
-    viewmodel.position.set(bobX + adsX, -kick + bobY + adsY, kick * 0.4 + adsZ);
-    viewmodel.rotation.x = -kick * 1.8 - adsBlend * 0.02;
-    viewmodel.rotation.y = -adsBlend * 0.04 + spinT * 0.05;
-    viewmodel.rotation.z = bobX * 2 + kick * 0.3 * style.kickScale;
-    viewmodel.visible = alive && !(opts.hideViewmodel && adsBlend > 0.55);
+    viewmodel.position.set(
+      bobX + adsX + magWiggle * 0.04,
+      -kick + bobY + adsY - rb * 0.14 - rack * 0.05,
+      kick * 0.4 + adsZ + rb * 0.1,
+    );
+    viewmodel.rotation.x = -kick * 1.8 - adsBlend * 0.02 - rb * 0.55 - rack;
+    viewmodel.rotation.y = -adsBlend * 0.04 + spinT * 0.05 + magWiggle * 0.35;
+    viewmodel.rotation.z =
+      bobX * 2 + kick * 0.3 * style.kickScale + magWiggle * 0.5 - rb * 0.15;
+    viewmodel.visible = alive && !(opts.hideViewmodel && adsBlend > 0.55 && !reloading);
 
     const targetFov = THREE.MathUtils.lerp(baseFov, opts.adsFov, adsBlend);
     camera.fov = targetFov + fovKick;

@@ -43,8 +43,22 @@ npm run dev
 
 - Client: [http://localhost:5173](http://localhost:5173)
 - Server: `ws://localhost:3001` (64-tick authoritative)
+- **Level editor:** [http://localhost:5173/editor.html](http://localhost:5173/editor.html)
 
 Or separately: `npm run dev:server` and `npm run dev:client`.
+
+### Level editor
+
+Design the arena yourself with drag-and-drop props:
+
+1. Run `npm run dev` and open `/editor.html`.
+2. Pick a model in the left palette, click the ground to place it.
+3. Select objects and use the gizmo to move (keys **1/2/3** = translate/rotate/scale, **Q/E** rotate).
+4. Toggle **Solid** so players collide / can stand on it (shown as orange wire boxes).
+5. **Download** and save as `client/public/arenas/grassareana.json`.
+6. Restart the server (and refresh the client) so both use the new layout.
+
+The live map is loaded from **`client/public/arenas/grassareana.json`** (client fetch + server file read).
 
 ### Classes
 
@@ -55,7 +69,7 @@ Or separately: `npm run dev:server` and `npm run dev:client`.
 | Nullshade | Shade Carbine | Phase Step | Veil |
 | Galvanaut | Coil Scatter | Arc Surge | Storm Anchor |
 
-Press **C** in-match to swap class (12s cooldown). Players start with **200 HP**.
+Press **V** in-match to swap class (12s cooldown). Players start with **200 HP**.
 
 ### Gun Game
 
@@ -71,15 +85,17 @@ The server runs **two separate lobbies** (Ability Arena and Gun Game). Joining o
 | WASD | Move |
 | Mouse | Look |
 | Space | Jump |
-| Ctrl | Crouch |
+| C | Crouch |
 | LMB | Fire |
 | RMB | Aim down sights / scope |
 | Q / E | Lean peek left / right |
 | R | Reload |
 | 1 / 2 | Class abilities |
-| C | Change class (in-match) |
+| V | Change class (in-match) |
 | Tab | Scoreboard |
-| Esc | Release pointer |
+| Esc | Pause / release pointer |
+
+Click-to-play also requests **fullscreen** + keyboard lock (Chromium) so Ctrl+W / Ctrl+R don't close or refresh the tab mid-fight.
 
 Sounds are procedural (Web Audio): gunfire, hit confirm, damage, reload, footsteps, death.
 

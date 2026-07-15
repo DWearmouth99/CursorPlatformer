@@ -259,42 +259,84 @@ canvas {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 22px;
-  height: 22px;
-  margin: -11px 0 0 -11px;
+  width: 56px;
+  height: 56px;
+  margin: -28px 0 0 -28px;
   opacity: 0;
-  z-index: 7;
+  pointer-events: none;
+  z-index: 12;
 }
 
 #hit-marker.visible {
   opacity: 1;
+  animation: hitmarker-punch 0.28s cubic-bezier(0.15, 0.9, 0.3, 1) both;
 }
 
-#hit-marker::before,
-#hit-marker::after {
-  content: "";
+#hit-marker .hm {
   position: absolute;
-  background: #f5f5f5;
-  box-shadow: 0 0 0 1px #000;
+  width: 18px;
+  height: 4px;
+  background: #f4f7fa;
+  border-radius: 1px;
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.85),
+    0 0 10px rgba(255, 255, 255, 0.9);
 }
 
-#hit-marker::before {
-  left: 10px;
-  top: 0;
-  width: 2px;
-  height: 22px;
-}
-
-#hit-marker::after {
-  left: 0;
+/* Classic X: gaps at the center so the crosshair stays readable */
+#hit-marker .hm-tl {
+  left: 4px;
   top: 10px;
-  width: 22px;
-  height: 2px;
+  transform: rotate(45deg);
+  transform-origin: right center;
 }
 
-#hit-marker.headshot::before,
-#hit-marker.headshot::after {
-  background: #ff4d4d;
+#hit-marker .hm-tr {
+  right: 4px;
+  top: 10px;
+  transform: rotate(-45deg);
+  transform-origin: left center;
+}
+
+#hit-marker .hm-bl {
+  left: 4px;
+  bottom: 10px;
+  transform: rotate(-45deg);
+  transform-origin: right center;
+}
+
+#hit-marker .hm-br {
+  right: 4px;
+  bottom: 10px;
+  transform: rotate(45deg);
+  transform-origin: left center;
+}
+
+#hit-marker.headshot .hm {
+  background: #ff3b3b;
+  width: 22px;
+  height: 5px;
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.9),
+    0 0 14px rgba(255, 60, 40, 0.95);
+}
+
+@keyframes hitmarker-punch {
+  0% {
+    transform: scale(0.45);
+    opacity: 1;
+    filter: brightness(2);
+  }
+  35% {
+    transform: scale(1.35);
+    opacity: 1;
+    filter: brightness(1.4);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+    filter: brightness(1);
+  }
 }
 
 #damage-flash {
@@ -814,5 +856,106 @@ canvas {
 
 #ability-bars.hidden {
   display: none;
+}
+
+#pause-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+#pause-menu.hidden {
+  display: none;
+}
+
+.pause-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 10, 16, 0.72);
+}
+
+.pause-shell {
+  position: relative;
+  width: min(380px, 92vw);
+}
+
+.pause-panel {
+  background: rgba(18, 24, 32, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 1.5rem 1.35rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.pause-panel.hidden {
+  display: none;
+}
+
+.pause-panel h2 {
+  text-align: center;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-size: 1.05rem;
+  margin-bottom: 0.35rem;
+  font-weight: 600;
+}
+
+.pause-btn {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.04);
+  color: #eee;
+  padding: 0.7rem 1rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.pause-btn:hover {
+  background: rgba(110, 200, 239, 0.14);
+  border-color: rgba(110, 200, 239, 0.4);
+}
+
+.pause-btn-danger:hover {
+  background: rgba(220, 80, 70, 0.18);
+  border-color: rgba(220, 100, 90, 0.45);
+}
+
+.pause-hint {
+  text-align: center;
+  font-size: 0.72rem;
+  opacity: 0.45;
+  margin-top: 0.35rem;
+}
+
+.pause-setting {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  opacity: 0.9;
+}
+
+.pause-setting-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.pause-setting-row input[type="range"] {
+  flex: 1;
+}
+
+.pause-setting-row b {
+  min-width: 3.2rem;
+  text-align: right;
+  font-size: 0.78rem;
+  opacity: 0.75;
 }
 

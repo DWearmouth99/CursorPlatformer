@@ -3,6 +3,7 @@ export * from "./math.js";
 export * from "./collision.js";
 export * from "./movement.js";
 export * from "./map.js";
+export * from "./arenaConfig.js";
 export * from "./protocol.js";
 export * from "./combat.js";
 export * from "./abilities.js";

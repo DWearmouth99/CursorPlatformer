@@ -47,8 +47,12 @@ export function createHud() {
   let flashUntil = 0;
 
   function showHitMarker(headshot: boolean): void {
-    hitMarkerUntil = performance.now() + (headshot ? 180 : 120);
+    hitMarkerUntil = performance.now() + (headshot ? 320 : 240);
     hitMarkerEl.classList.toggle("headshot", headshot);
+    // Restart punch animation on every hit
+    hitMarkerEl.classList.remove("visible");
+    void hitMarkerEl.offsetWidth;
+    hitMarkerEl.classList.add("visible");
   }
 
   function showDamageFlash(): void {
