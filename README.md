@@ -61,7 +61,7 @@ Press **C** in-match to swap class (12s cooldown). Players start with **200 HP**
 
 Separate FFA mode (menu tab). One kill advances you through **20** meme weapons — first kill with the **Golden Banana** wins. Short-range toys (Tactical Slap, Gravity Hammer, Ban Hammer) use a max range clamp. Abilities are disabled.
 
-The first player to join a empty server locks the mode for that lobby.
+The server runs **two separate lobbies** (Ability Arena and Gun Game). Joining one never puts you in the other.
 
 ### Controls
 

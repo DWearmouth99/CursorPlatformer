@@ -80,6 +80,7 @@ export function createInput(initialYaw = 0) {
   }
 
   function getButtons(): CombatButtons {
+    const locked = document.pointerLockElement != null;
     return {
       forward: keys.has("KeyW"),
       back: keys.has("KeyS"),
@@ -87,12 +88,22 @@ export function createInput(initialYaw = 0) {
       right: keys.has("KeyD"),
       jump: keys.has("Space"),
       crouch: keys.has("ControlLeft") || keys.has("ControlRight"),
-      fire: mouseLeft && document.pointerLockElement != null,
+      fire: mouseLeft && locked,
       reload: keys.has("KeyR"),
-      ads: mouseRight && document.pointerLockElement != null,
-      ability1: keys.has("Digit1") || keys.has("Numpad1"),
-      ability2: keys.has("Digit2") || keys.has("Numpad2"),
+      ads: mouseRight && locked,
+      ability1: false,
+      ability2: false,
     };
+  }
+
+  /** Ability keys — caller enables only in Ability Arena. */
+  function getCombatButtons(allowAbilities: boolean): CombatButtons {
+    const b = getButtons();
+    if (allowAbilities) {
+      b.ability1 = keys.has("Digit1") || keys.has("Numpad1");
+      b.ability2 = keys.has("Digit2") || keys.has("Numpad2");
+    }
+    return b;
   }
 
   /** Update smoothed lean from Q/E. Returns current lean. */
@@ -135,6 +146,7 @@ export function createInput(initialYaw = 0) {
   return {
     look,
     getButtons,
+    getCombatButtons,
     updateLean,
     getLean,
     setAdsSensMult,

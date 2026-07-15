@@ -179,7 +179,9 @@ export async function startGame(container: HTMLElement) {
         hudRoot.classList.remove("hidden");
         syncModeUi();
         const modeLabel =
-          gameMode === "gun_game" ? "Gun Game" : getClass(classId).name;
+          gameMode === "gun_game"
+            ? "Gun Game lobby"
+            : `Ability Arena · ${getClass(classId).name}`;
         overlayHint.textContent = `Joined ${modeLabel} — click to play`;
       } else if (msg.type === "snapshot") {
         serverTick = msg.tick;
@@ -315,7 +317,7 @@ export async function startGame(container: HTMLElement) {
   function simTick(): void {
     if (!welcomed) return;
     clientTick += 1;
-    const buttons = input.getButtons();
+    const buttons = input.getCombatButtons(gameMode === "ability");
     const weapon = activeWeapon();
     const fireCooldownTicks = Math.max(1, Math.round(TICK_RATE / weapon.fireRate));
 
@@ -427,7 +429,7 @@ export async function startGame(container: HTMLElement) {
     classMenuWasDown = classDown;
 
     const lean = input.updateLean(frameDt);
-    const buttons = input.getButtons();
+    const buttons = input.getCombatButtons(gameMode === "ability");
     const weapon = activeWeapon();
     input.setAdsSensMult(buttons.ads ? weapon.adsSensMult : 1);
 
