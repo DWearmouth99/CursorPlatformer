@@ -163,9 +163,10 @@ export function createRemotePlayers(scene: THREE.Scene) {
       );
       entry.root.rotation.y = r.yaw;
       entry.root.rotation.z = -lean * LEAN_ROLL;
-      entry.root.scale.y = scale;
-      entry.root.scale.x = 1;
-      entry.root.scale.z = 1;
+      const shrink = r.shrunk ? 0.45 : 1;
+      entry.root.scale.y = scale * shrink;
+      entry.root.scale.x = shrink;
+      entry.root.scale.z = shrink;
 
       // Walk cycle
       if (speed > 1.2) {

@@ -115,6 +115,10 @@ export type PlayerStatus = {
   icePathUntil: number;
   /** Move speed multiplier from floors/status (1 = normal). */
   moveMult: number;
+  /** Banana peel / wet feet — slowed until tick. */
+  slowUntil: number;
+  /** Shrink ray — visually tiny until tick. */
+  shrinkUntil: number;
 };
 
 export function emptyStatus(): PlayerStatus {
@@ -124,6 +128,8 @@ export function emptyStatus(): PlayerStatus {
     burningUntil: 0,
     icePathUntil: 0,
     moveMult: 1,
+    slowUntil: 0,
+    shrinkUntil: 0,
   };
 }
 

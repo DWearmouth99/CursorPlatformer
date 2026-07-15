@@ -1,7 +1,11 @@
 import { aabbFromCenterSize, type AABB } from "./collision.js";
 import type { Vec3 } from "./math.js";
 import { TEAM, type Team } from "./constants.js";
-import { autoCollider, isNonSolidModel } from "./modelCatalog.js";
+import {
+  autoCollider,
+  bridgeDeckTopOffset,
+  isNonSolidModel,
+} from "./modelCatalog.js";
 import type { MapBox, MapDecoration, MapSurface, SpawnZone } from "./mapTypes.js";
 
 export type LevelProp = {
@@ -136,11 +140,18 @@ export function compileLevel(level: LevelFile): CompiledArena {
     // Rocks / mushrooms are visuals only — ignore solid + baked colliders.
     if (isNonSolidModel(p.model)) continue;
     if (!p.solid) continue;
-    const col = p.collider ?? autoCollider(p.model, scale);
+    // Always rebuild bridge colliders — baked railing AABBs block walking.
+    const col =
+      p.model.startsWith("bridge")
+        ? autoCollider(p.model, scale)
+        : (p.collider ?? autoCollider(p.model, scale));
+    const deckTop = bridgeDeckTopOffset(p.model, scale);
+    const cy =
+      deckTop != null ? p.y + deckTop - col.sy / 2 : p.y + col.sy / 2;
     boxes.push({
       id: p.id ?? `prop-${n++}`,
       cx: p.x,
-      cy: p.y + col.sy / 2,
+      cy,
       cz: p.z,
       sx: col.sx,
       sy: col.sy,

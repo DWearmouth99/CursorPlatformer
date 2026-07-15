@@ -75,7 +75,7 @@ export async function startGame(container: HTMLElement) {
     75,
     window.innerWidth / window.innerHeight,
     0.05,
-    400,
+    1500,
   );
   scene.add(camera);
 
@@ -163,6 +163,7 @@ export async function startGame(container: HTMLElement) {
   let latestPlayers: SnapshotPlayer[] = [];
 
   let localSpray = 0;
+  let localFireHeld = false;
   let localLastFireTick = -999;
   let clientTick = 0;
 
@@ -254,8 +255,21 @@ export async function startGame(container: HTMLElement) {
           localMag = self.magSize;
           localReloading = self.reloading;
           localAlive = self.alive;
-          localMoveMult = self.status?.moveMult ?? 1;
-          localStatusText = "";
+          {
+            let mult = self.status?.moveMult ?? 1;
+            if ((self.status?.slowUntil ?? 0) > msg.tick) mult *= 0.48;
+            if ((self.status?.shrinkUntil ?? 0) > msg.tick) mult *= 1.2;
+            localMoveMult = mult;
+            if ((self.status?.frozenUntil ?? 0) > msg.tick) {
+              localStatusText = "FROZEN";
+            } else if ((self.status?.shrinkUntil ?? 0) > msg.tick) {
+              localStatusText = "SHRUNK";
+            } else if ((self.status?.slowUntil ?? 0) > msg.tick) {
+              localStatusText = "SLIPPING";
+            } else {
+              localStatusText = "";
+            }
+          }
           if (!wasAlive && self.alive) {
             prediction.resetFromSnapshot(self);
             input.look.yaw = self.yaw;
@@ -291,14 +305,17 @@ export async function startGame(container: HTMLElement) {
         hud.pushKillFeed(`${msg.killerId} → ${msg.victimId}${hs}`);
       } else if (msg.type === "shot") {
         if (msg.shooterId === localId) return;
-        fx.remoteShot(
-          msg.origin,
-          msg.end,
-          msg.hitPlayer,
-          performance.now(),
-          resolveWeapon(msg.weaponId),
-        );
-        audio.shoot(false);
+        {
+          const w = resolveWeapon(msg.weaponId);
+          fx.remoteShot(
+            msg.origin,
+            msg.end,
+            msg.hitPlayer,
+            performance.now(),
+            w,
+          );
+          audio.shoot(false, w);
+        }
       } else if (msg.type === "gunAdvance") {
         if (msg.playerId === localId) {
           gunLevel = msg.gunLevel;
@@ -403,6 +420,7 @@ export async function startGame(container: HTMLElement) {
       buttons.fire = false;
       buttons.reload = false;
       buttons.sprint = false;
+      localFireHeld = false;
     }
 
     const moving =
@@ -432,10 +450,14 @@ export async function startGame(container: HTMLElement) {
     let fireSprayIndex = 0;
     const lean = input.getLean();
     const ads = buttons.ads;
+    const fireEdge = buttons.fire && !localFireHeld;
+    localFireHeld = buttons.fire;
 
+    const canSemi = !weapon.semiAuto || fireEdge;
     if (
       localAlive &&
       buttons.fire &&
+      canSemi &&
       !localReloading &&
       localAmmo > 0 &&
       clientTick - localLastFireTick >= fireCooldownTicks
@@ -453,36 +475,51 @@ export async function startGame(container: HTMLElement) {
         lean,
       );
       const spread = weapon.spreadDeg * (ads ? weapon.adsSpreadMult : 1);
-      const aim = spreadAngles(
-        input.look.yaw,
-        input.look.pitch,
-        spread,
-        clientTick * 17,
-      );
-      const { end } = serverHitscan(
-        origin,
-        aim.yaw,
-        aim.pitch,
-        localId ?? "",
-        [],
-        world.solids,
-        weapon.maxRange ?? 200,
-      );
-      const now = performance.now();
-      const eyeH = player.crouching ? PLAYER_EYE_CROUCH : PLAYER_EYE_STAND;
-      const rightX = Math.cos(input.look.yaw);
-      const rightZ = -Math.sin(input.look.yaw);
-      camera.position.set(
-        player.position.x + rightX * LEAN_LATERAL * lean,
-        player.position.y + eyeH,
-        player.position.z + rightZ * LEAN_LATERAL * lean,
-      );
-      camera.rotation.order = "YXZ";
-      camera.rotation.y = input.look.yaw;
-      camera.rotation.x = input.look.pitch;
-      camera.rotation.z = -lean * LEAN_ROLL;
-      fx.localShot(end, now, weapon);
-      audio.shoot(true);
+      // Rockets / snipers aim true; shotguns preview pellet cone.
+      const pellets =
+        weapon.explosionRadius != null
+          ? 1
+          : Math.min(weapon.pellets, 8);
+      let end = { x: origin.x, y: origin.y, z: origin.z };
+      for (let pellet = 0; pellet < pellets; pellet++) {
+        const aim = spreadAngles(
+          input.look.yaw,
+          input.look.pitch,
+          spread,
+          clientTick * 17 + pellet * 91,
+        );
+        const hit = serverHitscan(
+          origin,
+          aim.yaw,
+          aim.pitch,
+          localId ?? "",
+          [],
+          world.solids,
+          weapon.maxRange ?? 200,
+        );
+        end = hit.end;
+        if (pellet === 0 || weapon.pellets > 1) {
+          // Camera matrix used by FX — update once before first spawn.
+          if (pellet === 0) {
+            const eyeH = player.crouching
+              ? PLAYER_EYE_CROUCH
+              : PLAYER_EYE_STAND;
+            const rightX = Math.cos(input.look.yaw);
+            const rightZ = -Math.sin(input.look.yaw);
+            camera.position.set(
+              player.position.x + rightX * LEAN_LATERAL * lean,
+              player.position.y + eyeH,
+              player.position.z + rightZ * LEAN_LATERAL * lean,
+            );
+            camera.rotation.order = "YXZ";
+            camera.rotation.y = input.look.yaw;
+            camera.rotation.x = input.look.pitch;
+            camera.rotation.z = -lean * LEAN_ROLL;
+          }
+          fx.localShot(end, performance.now(), weapon, pellet > 0);
+        }
+      }
+      audio.shoot(true, weapon);
     }
     if (!buttons.fire) localSpray = 0;
 
@@ -541,6 +578,7 @@ export async function startGame(container: HTMLElement) {
     const spd = length2d(player.velocity);
     const ads = buttons.ads && localAlive;
 
+    world.updateSky(frameDt, now);
     remotes.sync(interpolator.sample(localId, now), frameDt);
     syncWeaponVisual();
     fx.update(now, frameDt, localAlive, localAlive && player.grounded && spd > 1.2, {

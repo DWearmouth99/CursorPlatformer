@@ -5,8 +5,8 @@ export function createAudio() {
   let ctx: AudioContext | null = null;
   let master: GainNode | null = null;
   let musicBus: GainNode | null = null;
-  let volume = 0.6;
-  let musicVolume = 0.02;
+  let volume = 0.55;
+  let musicVolume = 0.018;
   let hitmarkerBuf: AudioBuffer | null = null;
   let reloadBuf: AudioBuffer | null = null;
   let musicBuf: AudioBuffer | null = null;
@@ -152,7 +152,7 @@ export function createAudio() {
     src.buffer = walkBuf;
     src.loop = true;
     src.playbackRate.value = walkRateSmoothed;
-    g.gain.value = 0.5;
+    g.gain.value = 0.2;
     src.connect(g);
     g.connect(master);
     src.start();
@@ -174,7 +174,7 @@ export function createAudio() {
         if (walkGain) {
           const ac = ensure();
           if (ac) {
-            const g = 0.42 + Math.min(0.28, (walkRateSmoothed - 1) * 0.35);
+            const g = 0.168 + Math.min(0.112, (walkRateSmoothed - 1) * 0.144);
             walkGain.gain.setTargetAtTime(g, ac.currentTime, 0.05);
           }
         }
@@ -252,7 +252,62 @@ export function createAudio() {
     src.stop(t0 + duration);
   }
 
-  function shoot(local: boolean): void {
+  function shoot(
+    local: boolean,
+    weapon?: {
+      id?: string;
+      projectile?: string;
+      fireRate?: number;
+      pellets?: number;
+      meleeCone?: number;
+      explosionRadius?: number;
+    } | null,
+  ): void {
+    const id = weapon?.id ?? "";
+    if (weapon?.meleeCone != null) {
+      if (id === "gg_slap") {
+        noiseBurst(local ? 0.08 : 0.05, local ? 0.16 : 0.08, 900);
+        tone(local ? 160 : 140, 0.07, "sine", local ? 0.1 : 0.05, 90);
+        return;
+      }
+      // Hammers / board — heavy whoosh + thud
+      noiseBurst(local ? 0.12 : 0.08, local ? 0.2 : 0.1, 500);
+      tone(local ? 70 : 55, 0.14, "sawtooth", local ? 0.12 : 0.06, 25);
+      setTimeout(() => noiseBurst(0.08, local ? 0.12 : 0.06, 300), 50);
+      return;
+    }
+    if (weapon?.projectile === "rocket") {
+      noiseBurst(local ? 0.18 : 0.12, local ? 0.22 : 0.1, 600);
+      tone(local ? 90 : 70, 0.2, "sawtooth", local ? 0.12 : 0.06, 30);
+      setTimeout(() => noiseBurst(0.25, local ? 0.18 : 0.08, 350), 40);
+      return;
+    }
+    if (id === "gg_chicken") {
+      tone(local ? 420 : 360, 0.05, "square", local ? 0.08 : 0.04);
+      tone(local ? 280 : 240, 0.08, "sawtooth", local ? 0.07 : 0.035, 120);
+      noiseBurst(local ? 0.06 : 0.04, local ? 0.1 : 0.05, 1200);
+      return;
+    }
+    if (id === "gg_soaker" || id === "gg_bubble") {
+      noiseBurst(local ? 0.09 : 0.06, local ? 0.12 : 0.06, 800);
+      tone(local ? 500 : 420, 0.04, "sine", local ? 0.05 : 0.03);
+      return;
+    }
+    if (id === "gg_thunder" || id === "gg_pointer") {
+      noiseBurst(local ? 0.05 : 0.03, local ? 0.1 : 0.05, 2800);
+      tone(local ? 880 : 720, 0.05, "sawtooth", local ? 0.07 : 0.035, 200);
+      return;
+    }
+    if (weapon?.pellets && weapon.pellets > 1) {
+      noiseBurst(local ? 0.1 : 0.07, local ? 0.18 : 0.08, 1400);
+      tone(local ? 120 : 100, 0.08, "square", local ? 0.08 : 0.04, 45);
+      return;
+    }
+    if (weapon?.fireRate && weapon.fireRate >= 10) {
+      noiseBurst(local ? 0.04 : 0.03, local ? 0.1 : 0.045, 2200);
+      tone(local ? 220 : 180, 0.035, "square", local ? 0.045 : 0.022, 80);
+      return;
+    }
     noiseBurst(local ? 0.07 : 0.05, local ? 0.14 : 0.06, 1800);
     tone(local ? 180 : 140, 0.06, "square", local ? 0.06 : 0.03, 60);
   }

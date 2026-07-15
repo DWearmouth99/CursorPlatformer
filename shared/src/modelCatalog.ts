@@ -191,9 +191,29 @@ export function autoCollider(
     const trunk = 0.65 * (scale / 4);
     return { sx: trunk, sy: info.height * scale * 0.9, sz: trunk };
   }
+  // Bridges: thin walkable deck only (not the full railing AABB).
+  if (info.id.startsWith("bridge")) {
+    return {
+      sx: info.footprint[0] * scale,
+      sy: Math.max(0.32, info.height * scale * 0.16),
+      // Slightly narrower than mesh so railings aren't solid walls
+      sz: info.footprint[1] * scale * 0.52,
+    };
+  }
   return {
     sx: info.footprint[0] * scale,
     sy: info.height * scale,
     sz: info.footprint[1] * scale,
   };
+}
+
+/**
+ * Vertical offset from prop.y (model bottom) to the top of a bridge deck collider.
+ * Keeps the walkable surface near the plank height instead of railing top.
+ */
+export function bridgeDeckTopOffset(model: string, scale: number): number | null {
+  if (!model.startsWith("bridge")) return null;
+  const info = getModelInfo(model);
+  const fullH = (info?.height ?? 0.67) * scale;
+  return fullH * 0.3;
 }

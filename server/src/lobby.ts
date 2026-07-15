@@ -122,7 +122,55 @@ export function createLobby(
   }
 
   function speedOf(p: NetPlayer) {
-    return 1.05 * (p.status.moveMult || 1);
+    let m = 1.05 * (p.status.moveMult || 1);
+    if (tick < p.status.slowUntil) m *= 0.48;
+    if (tick < p.status.shrinkUntil) m *= 1.2;
+    return m;
+  }
+
+  function applyOnHit(weapon: WeaponDef, victim: NetPlayer): void {
+    if (!weapon.onHit) return;
+    const ms = weapon.onHitMs ?? 1000;
+    const until = tick + Math.max(1, Math.round((ms / 1000) * TICK_RATE));
+    switch (weapon.onHit) {
+      case "slip":
+        victim.status.slowUntil = Math.max(victim.status.slowUntil, until);
+        break;
+      case "freeze":
+      case "shock":
+        victim.status.frozenUntil = Math.max(victim.status.frozenUntil, until);
+        break;
+      case "shrink":
+        victim.status.shrinkUntil = Math.max(victim.status.shrinkUntil, until);
+        break;
+    }
+  }
+
+  function splashAt(
+    center: { x: number; y: number; z: number },
+    radius: number,
+    damage: number,
+    shooterId: string,
+    applyHit: (
+      playerId: string,
+      dmg: number,
+      head: boolean,
+      point: { x: number; y: number; z: number },
+    ) => void,
+  ): void {
+    for (const other of players.values()) {
+      if (!other.alive || other.id === shooterId) continue;
+      const dx = other.state.position.x - center.x;
+      const dy =
+        other.state.position.y +
+        (other.state.crouching ? 0.55 : 0.9) -
+        center.y;
+      const dz = other.state.position.z - center.z;
+      const dist = Math.hypot(dx, dy, dz);
+      if (dist > radius) continue;
+      const falloff = 1 - dist / radius;
+      applyHit(other.id, damage * Math.max(0.25, falloff), false, center);
+    }
   }
 
   function toSnapshot(p: NetPlayer): SnapshotPlayer {
@@ -262,12 +310,14 @@ export function createLobby(
     }
   }
 
-  function tryFire(shooter: NetPlayer): void {
+  function tryFire(shooter: NetPlayer, fireEdge: boolean): void {
     const weapon = weaponOf(shooter);
     const fireCooldown = Math.max(1, Math.round(TICK_RATE / weapon.fireRate));
     if (!shooter.alive || shooter.reloading) return;
     if (shooter.ammo <= 0) return;
     if (tick - shooter.lastFireTick < fireCooldown) return;
+    // Pistols / AWP / rockets: one shot per click
+    if (weapon.semiAuto && !fireEdge) return;
 
     shooter.lastFireTick = tick;
     shooter.ammo -= 1;
@@ -344,6 +394,35 @@ export function createLobby(
         );
         lastEnd = end;
       }
+      // Gravity Hammer slam etc. — splash from swing tip
+      if (weapon.explosionRadius != null && weapon.explosionRadius > 0) {
+        splashAt(
+          lastEnd,
+          weapon.explosionRadius,
+          weapon.damage * 0.55,
+          shooter.id,
+          applyHit,
+        );
+      }
+    } else if (weapon.explosionRadius != null && weapon.explosionRadius > 0) {
+      // Rocket / potato / thunder: hitscan then splash at impact.
+      const { end } = serverHitscan(
+        origin,
+        baseYaw,
+        basePitch,
+        shooter.id,
+        poses,
+        solids,
+        weapon.maxRange ?? 200,
+      );
+      lastEnd = end;
+      splashAt(
+        end,
+        weapon.explosionRadius,
+        weapon.damage,
+        shooter.id,
+        applyHit,
+      );
     } else {
       for (let pellet = 0; pellet < weapon.pellets; pellet++) {
         const aim = spreadAngles(
@@ -384,6 +463,7 @@ export function createLobby(
       if (!victim || !victim.alive) continue;
       const damage = Math.round(info.dmg);
       victim.hp = Math.max(0, victim.hp - damage);
+      applyOnHit(weapon, victim);
 
       send(shooter.ws, {
         type: "hitConfirm",
@@ -403,7 +483,7 @@ export function createLobby(
         victim.deaths += 1;
         shooter.kills += 1;
         victim.respawnTick = tick + RESPAWN_TICKS;
-          broadcast({
+        broadcast({
           type: "killFeed",
           killerId: shooter.id,
           victimId: victim.id,
@@ -491,6 +571,7 @@ export function createLobby(
 
     applyMovement(p.state, moveButtons, TICK_DT, solids, speedOf(p));
 
+    const fireEdge = buttons.fire && !p.fireHeld;
     const reloadEdge = buttons.reload && !p.reloadHeld;
     p.fireHeld = buttons.fire;
     p.reloadHeld = buttons.reload;
@@ -499,7 +580,7 @@ export function createLobby(
 
     if (reloadEdge) tryReload(p);
     if (buttons.fire && !p.reloading) {
-      tryFire(p);
+      tryFire(p, fireEdge);
     }
   }
 

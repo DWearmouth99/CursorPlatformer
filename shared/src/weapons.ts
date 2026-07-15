@@ -39,6 +39,24 @@ export type WeaponDef = {
   meleeCone?: number;
   /** Visual identity for tracers, muzzle, viewmodel. */
   fx?: WeaponFx;
+  /**
+   * GLB filename under `/weapons/` (e.g. `"ak47.glb"`).
+   * When omitted, the client uses the procedural blocky gun.
+   */
+  viewmodel?: string;
+  /** Require a fresh click per shot (pistols). Hold-to-spray if false/omitted. */
+  semiAuto?: boolean;
+  /** Splash damage radius (meters) at the impact point (rockets / meme blasts). */
+  explosionRadius?: number;
+  /** Client projectile / impact presentation. */
+  projectile?: "hitscan" | "rocket";
+  /**
+   * Silly on-hit status for meme guns (server applies via PlayerStatus).
+   * slip = banana peel slow, freeze = iced, shrink = tiny+faster, shock = brief stun.
+   */
+  onHit?: "slip" | "freeze" | "shrink" | "shock";
+  /** Duration of `onHit` in ms. */
+  onHitMs?: number;
 };
 
 export type WeaponShape =
@@ -51,7 +69,22 @@ export type WeaponShape =
   | "cannon"
   | "weird";
 
-export type TracerStyle = "line" | "thick" | "dots" | "beam" | "arc";
+export type TracerStyle =
+  | "line"
+  | "thick"
+  | "dots"
+  | "beam"
+  | "arc"
+  /** Chunky potato / food projectile. */
+  | "chunk"
+  /** Wavy noodle / flappy path. */
+  | "ribbon"
+  /** Big soft bubbles. */
+  | "bubble"
+  /** Lightning zig-zag. */
+  | "zigzag"
+  /** Hand / melee slash streak. */
+  | "slash";
 
 export type WeaponFx = {
   primary: number;

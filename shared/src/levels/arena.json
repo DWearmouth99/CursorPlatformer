@@ -27,12 +27,7 @@
       "z": 30,
       "yaw": 0,
       "scale": 4.2,
-      "solid": true,
-      "collider": {
-        "sx": 9.786000000000001,
-        "sy": 2.8140000000000005,
-        "sz": 3.528
-      }
+      "solid": true
     },
     {
       "model": "bridge.02",
@@ -41,12 +36,7 @@
       "z": -2,
       "yaw": 0,
       "scale": 4.2,
-      "solid": true,
-      "collider": {
-        "sx": 9.786000000000001,
-        "sy": 2.8140000000000005,
-        "sz": 3.528
-      }
+      "solid": true
     },
     {
       "model": "bridge.02",
@@ -55,12 +45,7 @@
       "z": -32,
       "yaw": 0,
       "scale": 4.2,
-      "solid": true,
-      "collider": {
-        "sx": 9.786000000000001,
-        "sy": 2.8140000000000005,
-        "sz": 3.528
-      }
+      "solid": true
     },
     {
       "model": "stone.02",

@@ -34,6 +34,8 @@ export type InterpolatedRemote = {
   crouching: boolean;
   alive: boolean;
   veiled: boolean;
+  /** Shrink Ray status — render tiny. */
+  shrunk: boolean;
 };
 
 /**
@@ -113,6 +115,7 @@ export function createInterpolator() {
         crouching: b.crouching,
         alive: b.alive,
         veiled: (b.status?.veiledUntil ?? 0) > newer.tick,
+        shrunk: (b.status?.shrinkUntil ?? 0) > newer.tick,
       });
     }
 
