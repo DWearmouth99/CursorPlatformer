@@ -9,8 +9,9 @@ Browser-based multiplayer FPS foundation (Counter-Strike–inspired): Three.js c
 
 ## Deploy (Render)
 
-One Web Service can host both the static client and the WebSocket server.
+One Web Service can host both the static client and the WebSocket server. **Do not use Vercel** — it does not support a long-lived WebSocket game server.
 
+- **Root directory:** leave blank (repo root), not `server/` or `client/`
 - **Build command:** `npm install && npm run build`
 - **Start command:** `npm start`
 - **URL:** the site origin (e.g. `https://cursorplatformer.onrender.com`) — the client auto-connects over `wss://` to the same host.
