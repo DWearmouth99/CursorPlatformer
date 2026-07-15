@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cursor FPS</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="main-menu">
+      <div class="menu-backdrop"></div>
+      <div class="menu-shell">
+        <header class="menu-brand">
+          <h1>CURSOR FPS</h1>
+          <p class="menu-sub">Select your class, then deploy</p>
+        </header>
+        <div class="menu-body">
+          <div id="class-grid" class="class-grid"></div>
+          <aside class="class-detail">
+            <h2 id="class-detail-name">Rifleman</h2>
+            <p id="class-detail-tag" class="class-detail-tag">Balanced mid-range</p>
+            <p id="class-detail-desc" class="class-detail-desc"></p>
+            <ul id="class-detail-stats" class="class-detail-stats"></ul>
+            <button type="button" id="play-btn" class="play-btn">Enter Match</button>
+          </aside>
+        </div>
+        <p class="menu-help">WASD · Mouse · Space · Ctrl · LMB fire · RMB aim · Q/E lean · R reload · Tab scores</p>
+      </div>
+    </div>
+
+    <div id="overlay" class="hidden">
+      <div class="panel">
+        <h1>Cursor FPS</h1>
+        <p id="overlay-hint">Connecting…</p>
+        <p class="hint">Click the canvas to capture the mouse</p>
+      </div>
+    </div>
+
+    <div id="hud" class="hidden">
+      <div id="scope-iron" class="scope-overlay" aria-hidden="true">
+        <div class="iron-post"></div>
+        <div class="iron-notch"></div>
+      </div>
+      <div id="scope-optic" class="scope-overlay" aria-hidden="true">
+        <div class="optic-ring"></div>
+        <div class="optic-cross optic-h"></div>
+        <div class="optic-cross optic-v"></div>
+      </div>
+      <div id="scope-sniper" class="scope-overlay" aria-hidden="true">
+        <div class="sniper-vignette"></div>
+        <div class="sniper-lens"></div>
+        <div class="sniper-reticle">
+          <span class="sr-h"></span>
+          <span class="sr-v"></span>
+          <span class="sr-dot"></span>
+        </div>
+      </div>
+      <div id="crosshair" aria-hidden="true">
+        <span class="ch ch-n"></span>
+        <span class="ch ch-s"></span>
+        <span class="ch ch-e"></span>
+        <span class="ch ch-w"></span>
+        <span class="ch-dot"></span>
+      </div>
+      <div id="hit-marker"></div>
+      <div id="damage-flash"></div>
+      <div id="kill-feed"></div>
+      <div id="hud-bottom">
+        <div id="hud-hp-wrap"><span class="label">HP</span> <span id="hud-hp">200</span></div>
+        <div id="hud-center">
+          <div id="hud-class"></div>
+          <div id="hud-weapon"></div>
+        </div>
+        <div id="hud-ammo-wrap"><span class="label">AMMO</span> <span id="hud-ammo">30 / 30</span></div>
+      </div>
+      <div id="respawn-msg">Respawning…</div>
+      <div id="scoreboard">
+        <table>
+          <thead>
+            <tr><th>Team</th><th>Player</th><th>Class</th><th>K</th><th>D</th></tr>
+          </thead>
+          <tbody id="scoreboard-body"></tbody>
+        </table>
+      </div>
+      <div id="debug"></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

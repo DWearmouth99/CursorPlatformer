@@ -1,0 +1,444 @@
+import { WebSocketServer, WebSocket } from "ws";
+import {
+  MAX_HP,
+  RESPAWN_MS,
+  TICK_DT,
+  TICK_MS,
+  TICK_RATE,
+  TEAM,
+  applyMovement,
+  bitsToButtons,
+  buildArena,
+  clonePoses,
+  createMoveState,
+  eyePosition,
+  getClass,
+  getPlayerPoseAtTime,
+  isClassId,
+  lagCompRewindTicks,
+  serverHitscan,
+  spawnForTeam,
+  spreadAngles,
+  type ClassId,
+  type ClientMsg,
+  type InputCmd,
+  type PlayerMoveState,
+  type PoseHistoryFrame,
+  type ServerMsg,
+  type SnapshotPlayer,
+  type Team,
+} from "@fps/shared";
+
+const PORT = Number(process.env.PORT ?? 3001);
+const RESPAWN_TICKS = Math.round((RESPAWN_MS / 1000) * TICK_RATE);
+
+type NetPlayer = {
+  id: string;
+  team: Team;
+  classId: ClassId;
+  ws: WebSocket;
+  state: PlayerMoveState;
+  hp: number;
+  alive: boolean;
+  ammo: number;
+  reloading: boolean;
+  reloadDoneTick: number;
+  lastFireTick: number;
+  sprayIndex: number;
+  fireHeld: boolean;
+  reloadHeld: boolean;
+  kills: number;
+  deaths: number;
+  respawnTick: number;
+  lastProcessedSeq: number;
+  pending: InputCmd | null;
+  lastButtons: number;
+  lean: number;
+};
+
+const arena = buildArena();
+const players = new Map<string, NetPlayer>();
+const poseHistory: PoseHistoryFrame[] = [];
+const HISTORY_MAX = Math.ceil(350 / TICK_MS);
+let nextId = 1;
+let tick = 0;
+
+function send(ws: WebSocket, msg: ServerMsg): void {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(msg));
+  }
+}
+
+function broadcast(msg: ServerMsg, exceptId?: string): void {
+  const raw = JSON.stringify(msg);
+  for (const p of players.values()) {
+    if (exceptId && p.id === exceptId) continue;
+    if (p.ws.readyState === WebSocket.OPEN) p.ws.send(raw);
+  }
+}
+
+function weaponOf(p: NetPlayer) {
+  return getClass(p.classId).weapon;
+}
+
+function speedOf(p: NetPlayer) {
+  return getClass(p.classId).speedMult;
+}
+
+function toSnapshot(p: NetPlayer): SnapshotPlayer {
+  const w = weaponOf(p);
+  return {
+    id: p.id,
+    team: p.team,
+    classId: p.classId,
+    position: {
+      x: p.state.position.x,
+      y: p.state.position.y,
+      z: p.state.position.z,
+    },
+    velocity: {
+      x: p.state.velocity.x,
+      y: p.state.velocity.y,
+      z: p.state.velocity.z,
+    },
+    yaw: p.state.yaw,
+    pitch: p.state.pitch,
+    lean: p.lean,
+    crouching: p.state.crouching,
+    grounded: p.state.grounded,
+    jumpHeld: p.state.jumpHeld,
+    hp: p.hp,
+    alive: p.alive,
+    ammo: p.ammo,
+    magSize: w.magSize,
+    reloading: p.reloading,
+    kills: p.kills,
+    deaths: p.deaths,
+  };
+}
+
+function pickTeam(): Team {
+  const tCount = [...players.values()].filter((p) => p.team === TEAM.T).length;
+  const ctCount = [...players.values()].filter((p) => p.team === TEAM.CT).length;
+  return tCount <= ctCount ? TEAM.T : TEAM.CT;
+}
+
+function assignSpawn(team: Team): PlayerMoveState {
+  const spawn = spawnForTeam(team);
+  return createMoveState(
+    spawn.position.x,
+    spawn.position.y,
+    spawn.position.z,
+    spawn.yaw,
+  );
+}
+
+function currentPoses() {
+  return [...players.values()].map((p) => ({
+    id: p.id,
+    position: p.state.position,
+    crouching: p.state.crouching,
+    alive: p.alive,
+  }));
+}
+
+function tryFire(shooter: NetPlayer): void {
+  const weapon = weaponOf(shooter);
+  const fireCooldown = Math.max(1, Math.round(TICK_RATE / weapon.fireRate));
+  if (!shooter.alive || shooter.reloading) return;
+  if (shooter.ammo <= 0) return;
+  if (tick - shooter.lastFireTick < fireCooldown) return;
+
+  shooter.lastFireTick = tick;
+  shooter.ammo -= 1;
+  shooter.sprayIndex = Math.min(
+    shooter.sprayIndex + 1,
+    weapon.recoilPattern.length - 1,
+  );
+
+  const baseYaw = shooter.state.yaw;
+  const basePitch = shooter.state.pitch;
+  const origin = eyePosition(
+    shooter.state.position,
+    shooter.state.crouching,
+    baseYaw,
+    shooter.lean,
+  );
+  const rewind = lagCompRewindTicks(TICK_MS);
+  const poses = getPlayerPoseAtTime(tick - rewind, poseHistory, currentPoses());
+
+  const ads = bitsToButtons(shooter.lastButtons).ads;
+  const spread =
+    weapon.spreadDeg * (ads ? weapon.adsSpreadMult : 1);
+
+  let anyHit = false;
+  let lastEnd = origin;
+  const damageByTarget = new Map<string, { dmg: number; head: boolean }>();
+
+  for (let pellet = 0; pellet < weapon.pellets; pellet++) {
+    const aim = spreadAngles(
+      baseYaw,
+      basePitch,
+      spread,
+      tick * 17 + shooter.lastProcessedSeq * 13 + pellet * 91,
+    );
+    const { hit, end } = serverHitscan(
+      origin,
+      aim.yaw,
+      aim.pitch,
+      shooter.id,
+      poses,
+      arena.solids,
+    );
+    lastEnd = end;
+    if (!hit) continue;
+    anyHit = true;
+    const dmg = hit.isHeadshot
+      ? weapon.damage * weapon.headshotMultiplier
+      : weapon.damage;
+    const prev = damageByTarget.get(hit.playerId);
+    if (!prev) {
+      damageByTarget.set(hit.playerId, { dmg, head: hit.isHeadshot });
+    } else {
+      prev.dmg += dmg;
+      prev.head = prev.head || hit.isHeadshot;
+    }
+  }
+
+  broadcast({
+    type: "shot",
+    shooterId: shooter.id,
+    origin: { x: origin.x, y: origin.y, z: origin.z },
+    end: lastEnd,
+    hitPlayer: anyHit,
+  });
+
+  for (const [victimId, info] of damageByTarget) {
+    const victim = players.get(victimId);
+    if (!victim || !victim.alive) continue;
+    const damage = Math.round(info.dmg);
+    victim.hp = Math.max(0, victim.hp - damage);
+
+    send(shooter.ws, {
+      type: "hitConfirm",
+      targetId: victim.id,
+      isHeadshot: info.head,
+      damage,
+    });
+    send(victim.ws, {
+      type: "damage",
+      amount: damage,
+      hp: victim.hp,
+      attackerId: shooter.id,
+    });
+
+    if (victim.hp <= 0) {
+      victim.alive = false;
+      victim.deaths += 1;
+      shooter.kills += 1;
+      victim.respawnTick = tick + RESPAWN_TICKS;
+      broadcast({
+        type: "killFeed",
+        killerId: shooter.id,
+        victimId: victim.id,
+        isHeadshot: info.head,
+      });
+    }
+  }
+}
+
+function tryReload(p: NetPlayer): void {
+  const weapon = weaponOf(p);
+  if (!p.alive || p.reloading) return;
+  if (p.ammo >= weapon.magSize) return;
+  p.reloading = true;
+  p.reloadDoneTick =
+    tick + Math.round((weapon.reloadMs / 1000) * TICK_RATE);
+  p.sprayIndex = 0;
+}
+
+function simulatePlayer(p: NetPlayer): void {
+  const weapon = weaponOf(p);
+  const cmd = p.pending;
+  p.pending = null;
+
+  let buttons = bitsToButtons(p.lastButtons);
+  if (cmd && cmd.seq > p.lastProcessedSeq) {
+    p.lastProcessedSeq = cmd.seq;
+    p.lastButtons = cmd.buttons;
+    buttons = bitsToButtons(cmd.buttons);
+    p.state.yaw = cmd.yaw;
+    p.state.pitch = cmd.pitch;
+    p.lean = Math.max(-1, Math.min(1, cmd.lean || 0));
+  }
+
+  if (!p.alive) {
+    if (tick >= p.respawnTick) {
+      p.state = assignSpawn(p.team);
+      p.hp = MAX_HP;
+      p.alive = true;
+      p.ammo = weapon.magSize;
+      p.reloading = false;
+      p.sprayIndex = 0;
+      p.fireHeld = false;
+      p.reloadHeld = false;
+    }
+    return;
+  }
+
+  if (p.reloading && tick >= p.reloadDoneTick) {
+    p.reloading = false;
+    p.ammo = weapon.magSize;
+  }
+
+  applyMovement(p.state, buttons, TICK_DT, arena.solids, speedOf(p));
+
+  const reloadEdge = buttons.reload && !p.reloadHeld;
+  p.fireHeld = buttons.fire;
+  p.reloadHeld = buttons.reload;
+
+  if (!buttons.fire) p.sprayIndex = 0;
+
+  if (reloadEdge) tryReload(p);
+  if (buttons.fire && !p.reloading) {
+    tryFire(p);
+  }
+}
+
+function tickOnce(): void {
+  tick += 1;
+  for (const p of players.values()) {
+    simulatePlayer(p);
+  }
+
+  poseHistory.push({ tick, poses: clonePoses(currentPoses()) });
+  while (poseHistory.length > HISTORY_MAX) poseHistory.shift();
+
+  const all = [...players.values()].map(toSnapshot);
+  for (const p of players.values()) {
+    send(p.ws, {
+      type: "snapshot",
+      tick,
+      ackSeq: p.lastProcessedSeq,
+      players: all,
+    });
+  }
+}
+
+function spawnPlayer(ws: WebSocket, classId: ClassId): void {
+  const id = String(nextId++);
+  const team = pickTeam();
+  const cls = getClass(classId);
+  const player: NetPlayer = {
+    id,
+    team,
+    classId: cls.id,
+    ws,
+    state: assignSpawn(team),
+    hp: MAX_HP,
+    alive: true,
+    ammo: cls.weapon.magSize,
+    reloading: false,
+    reloadDoneTick: 0,
+    lastFireTick: -999,
+    sprayIndex: 0,
+    fireHeld: false,
+    reloadHeld: false,
+    kills: 0,
+    deaths: 0,
+    respawnTick: 0,
+    lastProcessedSeq: 0,
+    pending: null,
+    lastButtons: 0,
+    lean: 0,
+  };
+  players.set(id, player);
+
+  console.log(
+    `[server] join ${id} team=${team} class=${cls.id} players=${players.size}`,
+  );
+
+  send(ws, {
+    type: "welcome",
+    playerId: id,
+    team,
+    classId: cls.id,
+    tick,
+    players: [...players.values()].map(toSnapshot),
+  });
+  broadcast({ type: "playerJoined", player: toSnapshot(player) }, id);
+
+  ws.on("close", () => {
+    if (players.get(id)?.ws === ws) {
+      players.delete(id);
+      broadcast({ type: "playerLeft", playerId: id });
+      console.log(`[server] leave ${id} players=${players.size}`);
+    }
+  });
+}
+
+function onMessage(ws: WebSocket, player: NetPlayer | null, raw: string): void {
+  let msg: ClientMsg;
+  try {
+    msg = JSON.parse(raw) as ClientMsg;
+  } catch {
+    return;
+  }
+  if (!msg || typeof msg !== "object" || !("type" in msg)) return;
+
+  if (msg.type === "join") {
+    if (player) return; // already joined
+    const classId = isClassId(msg.classId) ? msg.classId : "rifleman";
+    spawnPlayer(ws, classId);
+    return;
+  }
+
+  if (msg.type !== "input" || !player) return;
+  if (typeof msg.seq !== "number" || typeof msg.buttons !== "number") return;
+  if (typeof msg.yaw !== "number" || typeof msg.pitch !== "number") return;
+  if (msg.seq <= player.lastProcessedSeq) return;
+  if (player.pending && msg.seq < player.pending.seq) return;
+  if (typeof msg.lean !== "number" || !Number.isFinite(msg.lean)) {
+    msg.lean = 0;
+  }
+  player.pending = msg;
+}
+
+function onConnection(ws: WebSocket): void {
+  let player: NetPlayer | null = null;
+
+  ws.on("message", (data) => {
+    const raw = typeof data === "string" ? data : data.toString();
+    // Resolve player from map by ws (set after join)
+    if (!player) {
+      for (const p of players.values()) {
+        if (p.ws === ws) {
+          player = p;
+          break;
+        }
+      }
+    }
+    onMessage(ws, player, raw);
+    if (!player) {
+      for (const p of players.values()) {
+        if (p.ws === ws) {
+          player = p;
+          break;
+        }
+      }
+    }
+  });
+
+  ws.on("close", () => {
+    // spawnPlayer also registers close; this covers pre-join disconnect
+  });
+}
+
+const wss = new WebSocketServer({ port: PORT });
+wss.on("connection", onConnection);
+
+setInterval(tickOnce, TICK_MS);
+
+console.log(
+  `[server] authoritative tick=${TICK_RATE}Hz on ws://localhost:${PORT}`,
+);

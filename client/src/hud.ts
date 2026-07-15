@@ -1,0 +1,86 @@
+export type HudState = {
+  hp: number;
+  ammo: number;
+  magSize: number;
+  reloading: boolean;
+  alive: boolean;
+  className: string;
+  weaponName: string;
+  scoreboardOpen: boolean;
+  players: Array<{
+    id: string;
+    team: string;
+    className: string;
+    kills: number;
+    deaths: number;
+    isLocal: boolean;
+  }>;
+};
+
+export function createHud() {
+  const hpEl = document.getElementById("hud-hp")!;
+  const ammoEl = document.getElementById("hud-ammo")!;
+  const classEl = document.getElementById("hud-class")!;
+  const weaponEl = document.getElementById("hud-weapon")!;
+  const killFeedEl = document.getElementById("kill-feed")!;
+  const hitMarkerEl = document.getElementById("hit-marker")!;
+  const damageFlashEl = document.getElementById("damage-flash")!;
+  const scoreboardEl = document.getElementById("scoreboard")!;
+  const scoreboardBody = document.getElementById("scoreboard-body")!;
+  const respawnEl = document.getElementById("respawn-msg")!;
+
+  let hitMarkerUntil = 0;
+  let flashUntil = 0;
+
+  function showHitMarker(headshot: boolean): void {
+    hitMarkerUntil = performance.now() + (headshot ? 180 : 120);
+    hitMarkerEl.classList.toggle("headshot", headshot);
+  }
+
+  function showDamageFlash(): void {
+    flashUntil = performance.now() + 180;
+  }
+
+  function pushKillFeed(text: string): void {
+    const row = document.createElement("div");
+    row.className = "kill-row";
+    row.textContent = text;
+    killFeedEl.prepend(row);
+    while (killFeedEl.children.length > 5) {
+      killFeedEl.lastElementChild?.remove();
+    }
+    setTimeout(() => row.remove(), 5000);
+  }
+
+  function render(state: HudState, now = performance.now()): void {
+    hpEl.textContent = String(Math.max(0, Math.round(state.hp)));
+    ammoEl.textContent = state.reloading
+      ? "REL…"
+      : `${state.ammo} / ${state.magSize}`;
+    classEl.textContent = state.className;
+    weaponEl.textContent = state.weaponName;
+
+    hitMarkerEl.classList.toggle("visible", now < hitMarkerUntil);
+    damageFlashEl.classList.toggle("visible", now < flashUntil);
+
+    respawnEl.classList.toggle("visible", !state.alive);
+    scoreboardEl.classList.toggle("visible", state.scoreboardOpen);
+
+    if (state.scoreboardOpen) {
+      const sorted = [...state.players].sort(
+        (a, b) => b.kills - a.kills || a.deaths - b.deaths,
+      );
+      scoreboardBody.innerHTML = sorted
+        .map(
+          (p) =>
+            `<tr class="${p.isLocal ? "local" : ""}">` +
+            `<td>${p.team}</td><td>${p.id}${p.isLocal ? " (you)" : ""}</td>` +
+            `<td>${p.className}</td>` +
+            `<td>${p.kills}</td><td>${p.deaths}</td></tr>`,
+        )
+        .join("");
+    }
+  }
+
+  return { showHitMarker, showDamageFlash, pushKillFeed, render };
+}

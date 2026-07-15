@@ -1,0 +1,65 @@
+/** Fixed simulation rate (Source-style multiplayer). */
+export const TICK_RATE = 64;
+export const TICK_MS = 1000 / TICK_RATE;
+export const TICK_DT = 1 / TICK_RATE;
+
+/** Render remotes this many ms behind latest snapshot (interpolation buffer). */
+export const INTERP_DELAY_MS = 100;
+
+/** Soft reconcile: ignore tiny prediction error (meters). */
+export const RECONCILE_THRESHOLD = 0.05;
+/** Hard snap if error exceeds this. */
+export const RECONCILE_SNAP = 1.5;
+/** Max simulation ticks processed per animation frame. */
+export const MAX_CLIENT_CATCHUP_TICKS = 3;
+
+export const DEFAULT_WS_URL = "ws://localhost:3001";
+
+/** Lateral eye offset when fully leaned (meters). */
+export const LEAN_LATERAL = 0.4;
+/** Camera roll at full lean (radians). */
+export const LEAN_ROLL = 0.16;
+
+/** Player dimensions (meters). Standing height includes head. */
+export const PLAYER_RADIUS = 0.4;
+export const PLAYER_HEIGHT_STAND = 1.8;
+export const PLAYER_HEIGHT_CROUCH = 1.1;
+export const PLAYER_EYE_STAND = 1.62;
+export const PLAYER_EYE_CROUCH = 0.95;
+
+/**
+ * Source-engine-inspired movement constants.
+ * Tunable: adjust these to change feel without touching sim code.
+ */
+export const MOVE = {
+  /** Max ground speed (standing). */
+  MAX_SPEED: 8.5,
+  /** Crouch speed multiplier. */
+  CROUCH_SPEED_MULT: 0.45,
+  /** Ground acceleration (sv_accelerate). */
+  ACCELERATE: 10,
+  /** Air acceleration (sv_airaccelerate) — higher = easier air strafe. */
+  AIR_ACCELERATE: 12,
+  /** Max wish speed contribution while airborne (Source air control clamp). */
+  AIR_SPEED_CAP: 1.2,
+  /** Ground friction (sv_friction). */
+  FRICTION: 6,
+  /** Speed below which friction stops you hard. */
+  STOP_SPEED: 1.5,
+  /** Upward velocity when jumping. */
+  JUMP_VELOCITY: 7.2,
+  /** Gravity (m/s²). */
+  GRAVITY: 20,
+  /** Max fall / clamp. */
+  MAX_VELOCITY: 50,
+} as const;
+
+export const MAX_HP = 200;
+export const RESPAWN_MS = 3000;
+
+export const TEAM = {
+  T: "T",
+  CT: "CT",
+} as const;
+
+export type Team = (typeof TEAM)[keyof typeof TEAM];
