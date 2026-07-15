@@ -1,4 +1,6 @@
 import {
+  PREDICT_PENDING_MAX,
+  RECONCILE_BLEND,
   RECONCILE_SNAP,
   RECONCILE_THRESHOLD,
   TICK_DT,
@@ -18,6 +20,7 @@ export type PendingCmd = InputCmd & { buttonsParsed: CombatButtons };
 
 /**
  * Local player prediction + soft server reconciliation.
+ * Higher RTT → gentler corrections so distant players don't rubber-band.
  */
 export function createPrediction(
   solids: readonly AABB[],
@@ -25,6 +28,8 @@ export function createPrediction(
 ) {
   let seq = 0;
   const pending: PendingCmd[] = [];
+  /** Smoothed one-way latency seconds (RTT/2), for blend softening. */
+  let oneWaySec = 0.05;
   const predicted = cloneMoveState({
     position: { x: 0, y: 0, z: 0 },
     velocity: { x: 0, y: 0, z: 0 },
@@ -72,8 +77,12 @@ export function createPrediction(
     predicted.pitch = pitch;
     applyMovement(predicted, buttons, TICK_DT, solids, getSpeedScale());
 
-    while (pending.length > 48) pending.shift();
+    while (pending.length > PREDICT_PENDING_MAX) pending.shift();
     return cmd;
+  }
+
+  function setOneWayLatency(sec: number): void {
+    oneWaySec = Math.max(0.02, Math.min(0.4, sec));
   }
 
   function reconcile(ackSeq: number, server: SnapshotPlayer): void {
@@ -109,14 +118,17 @@ export function createPrediction(
       return;
     }
 
+    // Soften blend as latency grows — hard snatching feels like rubber-banding.
+    const latencySoft = 1 / (1 + oneWaySec * 6);
+    const blend = RECONCILE_BLEND * latencySoft;
+
     if (err < RECONCILE_SNAP) {
-      const t = 0.35;
-      predicted.position.x += (scratch.position.x - predicted.position.x) * t;
-      predicted.position.y += (scratch.position.y - predicted.position.y) * t;
-      predicted.position.z += (scratch.position.z - predicted.position.z) * t;
-      predicted.velocity.x = scratch.velocity.x;
-      predicted.velocity.y = scratch.velocity.y;
-      predicted.velocity.z = scratch.velocity.z;
+      predicted.position.x += (scratch.position.x - predicted.position.x) * blend;
+      predicted.position.y += (scratch.position.y - predicted.position.y) * blend;
+      predicted.position.z += (scratch.position.z - predicted.position.z) * blend;
+      predicted.velocity.x += (scratch.velocity.x - predicted.velocity.x) * blend;
+      predicted.velocity.y += (scratch.velocity.y - predicted.velocity.y) * blend;
+      predicted.velocity.z += (scratch.velocity.z - predicted.velocity.z) * blend;
       predicted.grounded = scratch.grounded;
       predicted.crouching = scratch.crouching;
       predicted.jumpHeld = scratch.jumpHeld;
@@ -139,6 +151,7 @@ export function createPrediction(
     resetFromSnapshot,
     predictTick,
     reconcile,
+    setOneWayLatency,
     getState,
     setView,
     copyPredicted(out: PlayerMoveState) {

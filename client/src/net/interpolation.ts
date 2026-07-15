@@ -1,5 +1,8 @@
 import {
+  INTERP_DELAY_MAX_MS,
+  INTERP_DELAY_MIN_MS,
   INTERP_DELAY_MS,
+  INTERP_RTT_FACTOR,
   type SnapshotPlayer,
   type Vec3,
 } from "@fps/shared";
@@ -32,26 +35,35 @@ export type InterpolatedRemote = {
 };
 
 /**
- * Buffers world snapshots and samples remote players at now - INTERP_DELAY.
+ * Buffers world snapshots and samples remote players behind realtime.
+ * Delay grows with RTT so jittery long routes still interpolate smoothly.
  */
 export function createInterpolator() {
   const buffer: BufferedSnapshot[] = [];
+  let delayMs = INTERP_DELAY_MS;
+
+  function setRttMs(rttMs: number): void {
+    const adaptive = INTERP_DELAY_MS + rttMs * INTERP_RTT_FACTOR;
+    delayMs = Math.max(
+      INTERP_DELAY_MIN_MS,
+      Math.min(INTERP_DELAY_MAX_MS, adaptive),
+    );
+  }
 
   function push(serverTimeApprox: number, players: SnapshotPlayer[]): void {
     const map = new Map<string, SnapshotPlayer>();
     for (const p of players) map.set(p.id, p);
     buffer.push({ time: serverTimeApprox, players: map });
-    while (buffer.length > 60) buffer.shift();
+    while (buffer.length > 90) buffer.shift();
   }
 
   function sample(
     localId: string | null,
     renderTime: number,
   ): InterpolatedRemote[] {
-    const target = renderTime - INTERP_DELAY_MS;
+    const target = renderTime - delayMs;
     if (buffer.length === 0) return [];
 
-    // Find surrounding snapshots
     let older: BufferedSnapshot | null = null;
     let newer: BufferedSnapshot | null = null;
     for (let i = 0; i < buffer.length; i++) {
@@ -104,5 +116,5 @@ export function createInterpolator() {
     for (const snap of buffer) snap.players.delete(id);
   }
 
-  return { push, sample, removePlayer };
+  return { push, sample, removePlayer, setRttMs, getDelayMs: () => delayMs };
 }

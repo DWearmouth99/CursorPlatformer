@@ -12,6 +12,7 @@ import {
   TEAM,
   applyMovement,
   bitsToButtons,
+  buttonsToBits,
   buildArena,
   clonePoses,
   createMoveState,
@@ -58,7 +59,8 @@ type NetPlayer = {
   deaths: number;
   respawnTick: number;
   lastProcessedSeq: number;
-  pending: InputCmd | null;
+  /** Ordered unprocessed inputs (oldest first). */
+  inputQueue: InputCmd[];
   lastButtons: number;
   lean: number;
 };
@@ -263,10 +265,31 @@ function tryReload(p: NetPlayer): void {
   p.sprayIndex = 0;
 }
 
+const INPUT_QUEUE_MAX = 12;
+
+function takeQueuedInput(p: NetPlayer): InputCmd | null {
+  if (p.inputQueue.length === 0) return null;
+
+  // Cap backlog so a reconnect burst can't recreate multi-second fire delay.
+  // Fold dropped cmds' jump/fire/reload edges into the next retained cmd.
+  while (p.inputQueue.length > INPUT_QUEUE_MAX) {
+    const old = p.inputQueue.shift()!;
+    const next = p.inputQueue[0];
+    if (!next) break;
+    const ob = bitsToButtons(old.buttons);
+    const nb = bitsToButtons(next.buttons);
+    if (ob.jump) nb.jump = true;
+    if (ob.fire) nb.fire = true;
+    if (ob.reload) nb.reload = true;
+    next.buttons = buttonsToBits(nb);
+  }
+
+  return p.inputQueue.shift()!;
+}
+
 function simulatePlayer(p: NetPlayer): void {
   const weapon = weaponOf(p);
-  const cmd = p.pending;
-  p.pending = null;
+  const cmd = takeQueuedInput(p);
 
   let buttons = bitsToButtons(p.lastButtons);
   if (cmd && cmd.seq > p.lastProcessedSeq) {
@@ -354,7 +377,7 @@ function spawnPlayer(ws: WebSocket, classId: ClassId): void {
     deaths: 0,
     respawnTick: 0,
     lastProcessedSeq: 0,
-    pending: null,
+    inputQueue: [],
     lastButtons: 0,
     lean: 0,
   };
@@ -403,11 +426,13 @@ function onMessage(ws: WebSocket, player: NetPlayer | null, raw: string): void {
   if (typeof msg.seq !== "number" || typeof msg.buttons !== "number") return;
   if (typeof msg.yaw !== "number" || typeof msg.pitch !== "number") return;
   if (msg.seq <= player.lastProcessedSeq) return;
-  if (player.pending && msg.seq < player.pending.seq) return;
   if (typeof msg.lean !== "number" || !Number.isFinite(msg.lean)) {
     msg.lean = 0;
   }
-  player.pending = msg;
+  // Ordered queue: ignore duplicates / older seq already buffered.
+  const q = player.inputQueue;
+  if (q.length > 0 && msg.seq <= q[q.length - 1]!.seq) return;
+  q.push(msg);
 }
 
 function onWsConnection(ws: WebSocket): void {

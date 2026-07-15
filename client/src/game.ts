@@ -79,6 +79,8 @@ export async function startGame(container: HTMLElement) {
   let welcomed = false;
   let lastAck = 0;
   let tickAccum = 0;
+  let rttMs = 80;
+  const inputSendAt = new Map<number, number>();
   let serverTick = 0;
 
   let localHp = MAX_HP;
@@ -140,6 +142,16 @@ export async function startGame(container: HTMLElement) {
         serverTick = msg.tick;
         lastAck = msg.ackSeq;
         latestPlayers = msg.players;
+        const sentAt = inputSendAt.get(msg.ackSeq);
+        if (sentAt !== undefined) {
+          const sample = performance.now() - sentAt;
+          rttMs = rttMs * 0.85 + sample * 0.15;
+          prediction.setOneWayLatency(rttMs / 2000);
+          interpolator.setRttMs(rttMs);
+          for (const [seq] of inputSendAt) {
+            if (seq <= msg.ackSeq) inputSendAt.delete(seq);
+          }
+        }
         interpolator.push(performance.now(), msg.players);
         const self = msg.players.find((p) => p.id === localId);
         if (self && welcomed) {
@@ -291,6 +303,11 @@ export async function startGame(container: HTMLElement) {
       input.look.pitch,
       lean,
     );
+    inputSendAt.set(cmd.seq, performance.now());
+    if (inputSendAt.size > 120) {
+      const oldest = inputSendAt.keys().next().value;
+      if (oldest !== undefined) inputSendAt.delete(oldest);
+    }
     socket.send(cmd);
 
     if (firedThisTick) {
@@ -321,7 +338,10 @@ export async function startGame(container: HTMLElement) {
         tickAccum -= TICK_DT;
         steps += 1;
       }
-      if (tickAccum > TICK_DT * 2) tickAccum = 0;
+      // Keep a small remainder so we don't drift; discard only huge stalls.
+      if (tickAccum > TICK_DT * MAX_CLIENT_CATCHUP_TICKS) {
+        tickAccum = 0;
+      }
       prediction.setView(input.look.yaw, input.look.pitch);
     }
 
@@ -391,8 +411,8 @@ export async function startGame(container: HTMLElement) {
     );
 
     debugEl.textContent =
-      `net  ${connected ? "up" : "down"}  team ${localTeam ?? "-"}  id ${localId ?? "-"}\n` +
-      `class ${cls.id}  tick ${serverTick}  ack ${lastAck}\n` +
+      `net  ${connected ? "up" : "down"}  ping ${Math.round(rttMs)}ms  team ${localTeam ?? "-"}  id ${localId ?? "-"}\n` +
+      `class ${cls.id}  tick ${serverTick}  ack ${lastAck}  interp ${Math.round(interpolator.getDelayMs())}ms\n` +
       `pos  ${player.position.x.toFixed(2)}  ${player.position.y.toFixed(2)}  ${player.position.z.toFixed(2)}\n` +
       `spd  ${spd.toFixed(2)} m/s`;
 

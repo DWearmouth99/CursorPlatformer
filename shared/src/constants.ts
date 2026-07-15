@@ -5,13 +5,22 @@ export const TICK_DT = 1 / TICK_RATE;
 
 /** Render remotes this many ms behind latest snapshot (interpolation buffer). */
 export const INTERP_DELAY_MS = 100;
+/** Extra remote interp delay as a fraction of measured RTT. */
+export const INTERP_RTT_FACTOR = 0.5;
+/** Clamp for adaptive remote interpolation delay (ms). */
+export const INTERP_DELAY_MIN_MS = 100;
+export const INTERP_DELAY_MAX_MS = 280;
 
 /** Soft reconcile: ignore tiny prediction error (meters). */
-export const RECONCILE_THRESHOLD = 0.05;
+export const RECONCILE_THRESHOLD = 0.12;
 /** Hard snap if error exceeds this. */
-export const RECONCILE_SNAP = 1.5;
+export const RECONCILE_SNAP = 2.5;
+/** Base blend toward server pose on soft corrections (lower = less rubber-band). */
+export const RECONCILE_BLEND = 0.18;
 /** Max simulation ticks processed per animation frame. */
-export const MAX_CLIENT_CATCHUP_TICKS = 3;
+export const MAX_CLIENT_CATCHUP_TICKS = 8;
+/** How many unacked predicted inputs to keep (covers ~1.25s at 64 Hz). */
+export const PREDICT_PENDING_MAX = 80;
 
 export const DEFAULT_WS_URL = "ws://localhost:3001";
 
