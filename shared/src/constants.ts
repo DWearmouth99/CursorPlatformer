@@ -15,6 +15,26 @@ export const MAX_CLIENT_CATCHUP_TICKS = 3;
 
 export const DEFAULT_WS_URL = "ws://localhost:3001";
 
+/**
+ * Browser helper: same-origin WSS in production (e.g. Render),
+ * localhost:3001 when the Vite dev server is serving the page.
+ */
+export function resolveWsUrl(): string {
+  if (typeof window === "undefined" || typeof location === "undefined") {
+    return DEFAULT_WS_URL;
+  }
+  const { protocol, hostname, port, host } = location;
+  const local =
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "[::1]";
+  if (local && (port === "5173" || port === "5174" || port === "")) {
+    return DEFAULT_WS_URL;
+  }
+  const wsProto = protocol === "https:" ? "wss:" : "ws:";
+  return `${wsProto}//${host}`;
+}
+
 /** Lateral eye offset when fully leaned (meters). */
 export const LEAN_LATERAL = 0.4;
 /** Camera roll at full lean (radians). */

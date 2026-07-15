@@ -1,5 +1,5 @@
 import {
-  DEFAULT_WS_URL,
+  resolveWsUrl,
   parseServerMsg,
   type ClientMsg,
   type ServerMsg,
@@ -15,20 +15,23 @@ export type NetHandlers = {
  * Manual connect — call connect() after the player hits Play.
  * Auto-reconnect only after a successful join (enableReconnect).
  */
-export function createGameSocket(
-  handlers: NetHandlers,
-  url = DEFAULT_WS_URL,
-) {
+export function createGameSocket(handlers: NetHandlers, url = resolveWsUrl()) {
   let ws: WebSocket | null = null;
   let closed = false;
   let reconnect = false;
 
   function connect() {
     if (closed) return;
-    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+    if (
+      ws &&
+      (ws.readyState === WebSocket.OPEN ||
+        ws.readyState === WebSocket.CONNECTING)
+    ) {
       return;
     }
-    ws = new WebSocket(url);
+    const target = url || resolveWsUrl();
+    console.log(`[net] connecting ${target}`);
+    ws = new WebSocket(target);
 
     ws.addEventListener("open", () => {
       handlers.onOpen?.();

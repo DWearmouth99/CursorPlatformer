@@ -1,3 +1,7 @@
+import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { WebSocketServer, WebSocket } from "ws";
 import {
   MAX_HP,
@@ -31,6 +35,9 @@ import {
 
 const PORT = Number(process.env.PORT ?? 3001);
 const RESPAWN_TICKS = Math.round((RESPAWN_MS / 1000) * TICK_RATE);
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const CLIENT_DIST = path.resolve(__dirname, "../../client/dist");
 
 type NetPlayer = {
   id: string;
@@ -168,8 +175,7 @@ function tryFire(shooter: NetPlayer): void {
   const poses = getPlayerPoseAtTime(tick - rewind, poseHistory, currentPoses());
 
   const ads = bitsToButtons(shooter.lastButtons).ads;
-  const spread =
-    weapon.spreadDeg * (ads ? weapon.adsSpreadMult : 1);
+  const spread = weapon.spreadDeg * (ads ? weapon.adsSpreadMult : 1);
 
   let anyHit = false;
   let lastEnd = origin;
@@ -387,7 +393,7 @@ function onMessage(ws: WebSocket, player: NetPlayer | null, raw: string): void {
   if (!msg || typeof msg !== "object" || !("type" in msg)) return;
 
   if (msg.type === "join") {
-    if (player) return; // already joined
+    if (player) return;
     const classId = isClassId(msg.classId) ? msg.classId : "rifleman";
     spawnPlayer(ws, classId);
     return;
@@ -404,12 +410,11 @@ function onMessage(ws: WebSocket, player: NetPlayer | null, raw: string): void {
   player.pending = msg;
 }
 
-function onConnection(ws: WebSocket): void {
+function onWsConnection(ws: WebSocket): void {
   let player: NetPlayer | null = null;
 
   ws.on("message", (data) => {
     const raw = typeof data === "string" ? data : data.toString();
-    // Resolve player from map by ws (set after join)
     if (!player) {
       for (const p of players.values()) {
         if (p.ws === ws) {
@@ -428,17 +433,74 @@ function onConnection(ws: WebSocket): void {
       }
     }
   });
-
-  ws.on("close", () => {
-    // spawnPlayer also registers close; this covers pre-join disconnect
-  });
 }
 
-const wss = new WebSocketServer({ port: PORT });
-wss.on("connection", onConnection);
+const MIME: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".map": "application/json",
+};
+
+function serveStatic(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+): void {
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    res.writeHead(405);
+    res.end();
+    return;
+  }
+
+  const urlPath = decodeURIComponent((req.url ?? "/").split("?")[0] || "/");
+  let filePath = path.join(CLIENT_DIST, urlPath === "/" ? "index.html" : urlPath);
+
+  // Prevent path traversal
+  if (!filePath.startsWith(CLIENT_DIST)) {
+    res.writeHead(403);
+    res.end("Forbidden");
+    return;
+  }
+
+  if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+    filePath = path.join(CLIENT_DIST, "index.html");
+  }
+
+  if (!fs.existsSync(filePath)) {
+    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.end(
+      "Client build missing. Run npm run build before starting the server.",
+    );
+    return;
+  }
+
+  const ext = path.extname(filePath).toLowerCase();
+  res.writeHead(200, { "Content-Type": MIME[ext] ?? "application/octet-stream" });
+  if (req.method === "HEAD") {
+    res.end();
+    return;
+  }
+  fs.createReadStream(filePath).pipe(res);
+}
+
+const httpServer = http.createServer(serveStatic);
+const wss = new WebSocketServer({ server: httpServer });
+wss.on("connection", onWsConnection);
 
 setInterval(tickOnce, TICK_MS);
 
-console.log(
-  `[server] authoritative tick=${TICK_RATE}Hz on ws://localhost:${PORT}`,
-);
+httpServer.listen(PORT, () => {
+  const hasClient = fs.existsSync(path.join(CLIENT_DIST, "index.html"));
+  console.log(
+    `[server] listening on :${PORT} (ws + static${hasClient ? "" : ", client/dist missing"})`,
+  );
+});

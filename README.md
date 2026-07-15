@@ -7,13 +7,23 @@ Browser-based multiplayer FPS foundation (Counter-Strike–inspired): Three.js c
 - Node.js 20+
 - npm 10+
 
+## Deploy (Render)
+
+One Web Service can host both the static client and the WebSocket server.
+
+- **Build command:** `npm install && npm run build`
+- **Start command:** `npm start`
+- **URL:** the site origin (e.g. `https://cursorplatformer.onrender.com`) — the client auto-connects over `wss://` to the same host.
+
+Locally the Vite app still uses `ws://localhost:3001`.
+
 ## Install
 
 ```bash
 npm install
 ```
 
-## Run
+## Run locally
 
 ```bash
 npm run dev
