@@ -48,16 +48,20 @@ Or separately: `npm run dev:server` and `npm run dev:client`.
 
 ### Classes
 
-Pick a class on the main menu before joining:
+| Class | Weapon | Ability 1 `[1]` | Ability 2 `[2]` |
+|-------|--------|-----------------|-----------------|
+| Frostbinder | Cryo Needle | Ice Path | Frost Trap |
+| Emberkin | Ember Burst | Scorch Dash | Ember Nest |
+| Nullshade | Shade Carbine | Phase Step | Veil |
+| Galvanaut | Coil Scatter | Arc Surge | Storm Anchor |
 
-| Class | Weapon | Notes |
-|-------|--------|-------|
-| Rifleman | Assault Rifle | Balanced |
-| Scout | SMG | Faster move, high RoF |
-| Sniper | Sniper Rifle | High damage, slow fire |
-| Breacher | Shotgun | Pellet spread, CQC |
+Press **C** in-match to swap class (12s cooldown). Players start with **200 HP**.
 
-Players start with **200 HP**.
+### Gun Game
+
+Separate FFA mode (menu tab). One kill advances you through **20** meme weapons — first kill with the **Golden Banana** wins. Short-range toys (Tactical Slap, Gravity Hammer, Ban Hammer) use a max range clamp. Abilities are disabled.
+
+The first player to join a empty server locks the mode for that lobby.
 
 ### Controls
 
@@ -71,7 +75,9 @@ Players start with **200 HP**.
 | LMB | Fire |
 | RMB | Aim down sights / scope |
 | Q / E | Lean peek left / right |
-| R | Reload (2.5s) |
+| R | Reload |
+| 1 / 2 | Class abilities |
+| C | Change class (in-match) |
 | Tab | Scoreboard |
 | Esc | Release pointer |
 

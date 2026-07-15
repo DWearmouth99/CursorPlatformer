@@ -2,6 +2,9 @@ import type { Team } from "./constants.js";
 import type { MoveButtons } from "./movement.js";
 import type { Vec3 } from "./math.js";
 import type { ClassId } from "./weapons.js";
+import type { AbilityFxEvent, PlayerStatus, WorldProp } from "./abilities.js";
+
+export type GameMode = "ability" | "gun_game";
 
 export const BTN = {
   FORWARD: 1 << 0,
@@ -13,12 +16,16 @@ export const BTN = {
   FIRE: 1 << 6,
   RELOAD: 1 << 7,
   ADS: 1 << 8,
+  ABILITY1: 1 << 9,
+  ABILITY2: 1 << 10,
 } as const;
 
 export type CombatButtons = MoveButtons & {
   fire: boolean;
   reload: boolean;
   ads: boolean;
+  ability1: boolean;
+  ability2: boolean;
 };
 
 export function buttonsToBits(b: CombatButtons): number {
@@ -32,6 +39,8 @@ export function buttonsToBits(b: CombatButtons): number {
   if (b.fire) bits |= BTN.FIRE;
   if (b.reload) bits |= BTN.RELOAD;
   if (b.ads) bits |= BTN.ADS;
+  if (b.ability1) bits |= BTN.ABILITY1;
+  if (b.ability2) bits |= BTN.ABILITY2;
   return bits;
 }
 
@@ -46,12 +55,21 @@ export function bitsToButtons(bits: number): CombatButtons {
     fire: (bits & BTN.FIRE) !== 0,
     reload: (bits & BTN.RELOAD) !== 0,
     ads: (bits & BTN.ADS) !== 0,
+    ability1: (bits & BTN.ABILITY1) !== 0,
+    ability2: (bits & BTN.ABILITY2) !== 0,
   };
 }
 
-/** Client → server: select class then enter the match. */
+/** Client → server: select mode (+ class for Ability Arena). */
 export type JoinMsg = {
   type: "join";
+  mode: GameMode;
+  classId: ClassId;
+};
+
+/** Client → server: mid-match class swap (Ability Arena only). */
+export type ChangeClassMsg = {
+  type: "changeClass";
   classId: ClassId;
 };
 
@@ -85,6 +103,14 @@ export type SnapshotPlayer = {
   reloading: boolean;
   kills: number;
   deaths: number;
+  /** Ability cooldown remaining in ms (approx). */
+  ab1CdMs: number;
+  ab2CdMs: number;
+  status: PlayerStatus;
+  /** Gun Game ladder index 0..19. */
+  gunLevel: number;
+  /** Resolved weapon display name. */
+  weaponName: string;
 };
 
 export type WelcomeMsg = {
@@ -92,8 +118,10 @@ export type WelcomeMsg = {
   playerId: string;
   team: Team;
   classId: ClassId;
+  mode: GameMode;
   tick: number;
   players: SnapshotPlayer[];
+  props: WorldProp[];
 };
 
 export type SnapshotMsg = {
@@ -101,6 +129,7 @@ export type SnapshotMsg = {
   tick: number;
   ackSeq: number;
   players: SnapshotPlayer[];
+  props: WorldProp[];
 };
 
 export type PlayerJoinedMsg = {
@@ -142,6 +171,28 @@ export type ShotMsg = {
   hitPlayer: boolean;
 };
 
+export type AbilityFxMsg = {
+  type: "abilityFx";
+} & AbilityFxEvent;
+
+export type ClassChangedMsg = {
+  type: "classChanged";
+  playerId: string;
+  classId: ClassId;
+};
+
+export type GunAdvanceMsg = {
+  type: "gunAdvance";
+  playerId: string;
+  gunLevel: number;
+  weaponName: string;
+};
+
+export type GunGameWinMsg = {
+  type: "gunGameWin";
+  playerId: string;
+};
+
 export type ServerMsg =
   | WelcomeMsg
   | SnapshotMsg
@@ -150,9 +201,17 @@ export type ServerMsg =
   | HitConfirmMsg
   | DamageMsg
   | KillFeedMsg
-  | ShotMsg;
+  | ShotMsg
+  | AbilityFxMsg
+  | ClassChangedMsg
+  | GunAdvanceMsg
+  | GunGameWinMsg;
 
-export type ClientMsg = JoinMsg | InputCmd;
+export type ClientMsg = JoinMsg | ChangeClassMsg | InputCmd;
+
+export function isGameMode(v: unknown): v is GameMode {
+  return v === "ability" || v === "gun_game";
+}
 
 export function parseServerMsg(data: string): ServerMsg | null {
   try {

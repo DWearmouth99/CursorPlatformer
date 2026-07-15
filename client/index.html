@@ -12,19 +12,33 @@
       <div class="menu-shell">
         <header class="menu-brand">
           <h1>CURSOR FPS</h1>
-          <p class="menu-sub">Select your class, then deploy</p>
+          <p class="menu-sub">Pick a mode, then deploy</p>
         </header>
+        <div class="mode-tabs" role="tablist">
+          <button type="button" id="mode-ability" class="mode-tab active">Ability Arena</button>
+          <button type="button" id="mode-gun" class="mode-tab">Gun Game</button>
+        </div>
         <div class="menu-body">
-          <div id="class-grid" class="class-grid"></div>
+          <div id="class-panel">
+            <div id="class-grid" class="class-grid"></div>
+          </div>
           <aside class="class-detail">
-            <h2 id="class-detail-name">Rifleman</h2>
-            <p id="class-detail-tag" class="class-detail-tag">Balanced mid-range</p>
+            <h2 id="class-detail-name">Frostbinder</h2>
+            <p id="class-detail-tag" class="class-detail-tag"></p>
             <p id="class-detail-desc" class="class-detail-desc"></p>
             <ul id="class-detail-stats" class="class-detail-stats"></ul>
             <button type="button" id="play-btn" class="play-btn">Enter Match</button>
           </aside>
         </div>
-        <p class="menu-help">WASD · Mouse · Space · Ctrl · LMB fire · RMB aim · Q/E lean · R reload · Tab scores</p>
+        <p class="menu-help">WASD · Mouse · Space · Ctrl · LMB · RMB · Q/E lean · R reload · 1/2 abilities · C swap class · Tab scores</p>
+      </div>
+    </div>
+
+    <div id="class-swap" class="hidden">
+      <div class="class-swap-panel">
+        <h2>Change Class</h2>
+        <p class="class-swap-hint">12s cooldown between swaps · press C to close</p>
+        <div id="class-swap-grid" class="class-grid"></div>
       </div>
     </div>
 
@@ -70,8 +84,27 @@
         <div id="hud-center">
           <div id="hud-class"></div>
           <div id="hud-weapon"></div>
+          <div id="hud-status" class="hidden"></div>
         </div>
         <div id="hud-ammo-wrap"><span class="label">AMMO</span> <span id="hud-ammo">30 / 30</span></div>
+      </div>
+      <div id="ability-bars">
+        <div class="ability-slot" id="ab1-slot">
+          <div class="ability-label" id="ab1-label">1</div>
+          <div class="ability-track"><div class="ability-fill" id="ab1-fill"></div></div>
+          <div class="ability-cd" id="ab1-cd">READY</div>
+        </div>
+        <div class="ability-slot" id="ab2-slot">
+          <div class="ability-label" id="ab2-label">2</div>
+          <div class="ability-track"><div class="ability-fill" id="ab2-fill"></div></div>
+          <div class="ability-cd" id="ab2-cd">READY</div>
+        </div>
+      </div>
+      <div id="gun-ladder" class="hidden">
+        <div id="gun-ladder-title">GUN GAME</div>
+        <div id="gun-ladder-level">1 / 20</div>
+        <div id="gun-ladder-weapon">Pea Shooter</div>
+        <div id="gun-ladder-next">Next: Rubber Chicken</div>
       </div>
       <div id="respawn-msg">Respawning…</div>
       <div id="scoreboard">

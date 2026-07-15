@@ -9,6 +9,7 @@ import {
 
 type BufferedSnapshot = {
   time: number;
+  tick: number;
   players: Map<string, SnapshotPlayer>;
 };
 
@@ -32,6 +33,7 @@ export type InterpolatedRemote = {
   lean: number;
   crouching: boolean;
   alive: boolean;
+  veiled: boolean;
 };
 
 /**
@@ -50,10 +52,14 @@ export function createInterpolator() {
     );
   }
 
-  function push(serverTimeApprox: number, players: SnapshotPlayer[]): void {
+  function push(
+    serverTimeApprox: number,
+    players: SnapshotPlayer[],
+    serverTick = 0,
+  ): void {
     const map = new Map<string, SnapshotPlayer>();
     for (const p of players) map.set(p.id, p);
-    buffer.push({ time: serverTimeApprox, players: map });
+    buffer.push({ time: serverTimeApprox, tick: serverTick, players: map });
     while (buffer.length > 90) buffer.shift();
   }
 
@@ -106,6 +112,7 @@ export function createInterpolator() {
         lean: lerp(from.lean ?? 0, b.lean ?? 0, clampedT),
         crouching: b.crouching,
         alive: b.alive,
+        veiled: (b.status?.veiledUntil ?? 0) > newer.tick,
       });
     }
 

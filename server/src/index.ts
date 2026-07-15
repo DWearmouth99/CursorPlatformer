@@ -4,6 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, WebSocket } from "ws";
 import {
+  CLASS_CHANGE_COOLDOWN_MS,
+  GUN_GAME_LENGTH,
   MAX_HP,
   RESPAWN_MS,
   TICK_DT,
@@ -16,23 +18,31 @@ import {
   buildArena,
   clonePoses,
   createMoveState,
+  emptyStatus,
   eyePosition,
   getClass,
   getPlayerPoseAtTime,
+  gunGameWeapon,
   isClassId,
+  isGameMode,
   lagCompRewindTicks,
+  pickFfaSpawn,
+  pickSpawn,
   serverHitscan,
-  spawnForTeam,
   spreadAngles,
   type ClassId,
   type ClientMsg,
+  type GameMode,
   type InputCmd,
   type PlayerMoveState,
+  type PlayerStatus,
   type PoseHistoryFrame,
   type ServerMsg,
   type SnapshotPlayer,
   type Team,
+  type WeaponDef,
 } from "@fps/shared";
+import { cdRemainingMs, createAbilityRuntime } from "./abilities.js";
 
 const PORT = Number(process.env.PORT ?? 3001);
 const RESPAWN_TICKS = Math.round((RESPAWN_MS / 1000) * TICK_RATE);
@@ -63,14 +73,28 @@ type NetPlayer = {
   inputQueue: InputCmd[];
   lastButtons: number;
   lean: number;
+  status: PlayerStatus;
+  ab1ReadyTick: number;
+  ab2ReadyTick: number;
+  ability1Held: boolean;
+  ability2Held: boolean;
+  lastClassChangeTick: number;
+  gunLevel: number;
 };
 
 const arena = buildArena();
 const players = new Map<string, NetPlayer>();
 const poseHistory: PoseHistoryFrame[] = [];
 const HISTORY_MAX = Math.ceil(350 / TICK_MS);
+const abilityRt = createAbilityRuntime(() => arena.solids);
+const CLASS_CHANGE_TICKS = Math.round(
+  (CLASS_CHANGE_COOLDOWN_MS / 1000) * TICK_RATE,
+);
 let nextId = 1;
 let tick = 0;
+/** Locked when the first player joins; cleared when the lobby empties. */
+let matchMode: GameMode | null = null;
+let gunGameWinnerId: string | null = null;
 
 function send(ws: WebSocket, msg: ServerMsg): void {
   if (ws.readyState === WebSocket.OPEN) {
@@ -86,12 +110,15 @@ function broadcast(msg: ServerMsg, exceptId?: string): void {
   }
 }
 
-function weaponOf(p: NetPlayer) {
+function weaponOf(p: NetPlayer): WeaponDef {
+  if (matchMode === "gun_game") return gunGameWeapon(p.gunLevel);
   return getClass(p.classId).weapon;
 }
 
 function speedOf(p: NetPlayer) {
-  return getClass(p.classId).speedMult;
+  const base =
+    matchMode === "gun_game" ? 1.05 : getClass(p.classId).speedMult;
+  return base * (p.status.moveMult || 1);
 }
 
 function toSnapshot(p: NetPlayer): SnapshotPlayer {
@@ -123,6 +150,11 @@ function toSnapshot(p: NetPlayer): SnapshotPlayer {
     reloading: p.reloading,
     kills: p.kills,
     deaths: p.deaths,
+    ab1CdMs: cdRemainingMs(p.ab1ReadyTick, tick),
+    ab2CdMs: cdRemainingMs(p.ab2ReadyTick, tick),
+    status: { ...p.status },
+    gunLevel: p.gunLevel,
+    weaponName: w.name,
   };
 }
 
@@ -132,8 +164,37 @@ function pickTeam(): Team {
   return tCount <= ctCount ? TEAM.T : TEAM.CT;
 }
 
-function assignSpawn(team: Team): PlayerMoveState {
-  const spawn = spawnForTeam(team);
+function enemyPositions(forTeam: Team): { x: number; y: number; z: number }[] {
+  return [...players.values()]
+    .filter((p) => p.alive && p.team !== forTeam)
+    .map((p) => ({
+      x: p.state.position.x,
+      y: p.state.position.y,
+      z: p.state.position.z,
+    }));
+}
+
+function allAlivePositions(exceptId?: string): { x: number; y: number; z: number }[] {
+  return [...players.values()]
+    .filter((p) => p.alive && p.id !== exceptId)
+    .map((p) => ({
+      x: p.state.position.x,
+      y: p.state.position.y,
+      z: p.state.position.z,
+    }));
+}
+
+function assignSpawn(team: Team, playerId?: string): PlayerMoveState {
+  if (matchMode === "gun_game") {
+    const spawn = pickFfaSpawn(allAlivePositions(playerId), 22);
+    return createMoveState(
+      spawn.position.x,
+      spawn.position.y,
+      spawn.position.z,
+      spawn.yaw,
+    );
+  }
+  const spawn = pickSpawn(team, enemyPositions(team), 24);
   return createMoveState(
     spawn.position.x,
     spawn.position.y,
@@ -197,6 +258,7 @@ function tryFire(shooter: NetPlayer): void {
       shooter.id,
       poses,
       arena.solids,
+      weapon.maxRange ?? 200,
     );
     lastEnd = end;
     if (!hit) continue;
@@ -245,14 +307,36 @@ function tryFire(shooter: NetPlayer): void {
       victim.deaths += 1;
       shooter.kills += 1;
       victim.respawnTick = tick + RESPAWN_TICKS;
+      abilityRt.resetStatus(victim);
       broadcast({
         type: "killFeed",
         killerId: shooter.id,
         victimId: victim.id,
         isHeadshot: info.head,
       });
+      onGunGameKill(shooter);
     }
   }
+}
+
+function onGunGameKill(shooter: NetPlayer): void {
+  if (matchMode !== "gun_game" || gunGameWinnerId) return;
+  if (shooter.gunLevel >= GUN_GAME_LENGTH - 1) {
+    gunGameWinnerId = shooter.id;
+    broadcast({ type: "gunGameWin", playerId: shooter.id });
+    return;
+  }
+  shooter.gunLevel += 1;
+  const w = gunGameWeapon(shooter.gunLevel);
+  shooter.ammo = w.magSize;
+  shooter.reloading = false;
+  shooter.sprayIndex = 0;
+  broadcast({
+    type: "gunAdvance",
+    playerId: shooter.id,
+    gunLevel: shooter.gunLevel,
+    weaponName: w.name,
+  });
 }
 
 function tryReload(p: NetPlayer): void {
@@ -281,10 +365,51 @@ function takeQueuedInput(p: NetPlayer): InputCmd | null {
     if (ob.jump) nb.jump = true;
     if (ob.fire) nb.fire = true;
     if (ob.reload) nb.reload = true;
+    if (ob.ability1) nb.ability1 = true;
+    if (ob.ability2) nb.ability2 = true;
     next.buttons = buttonsToBits(nb);
   }
 
   return p.inputQueue.shift()!;
+}
+
+function applyRawDamage(
+  attackerId: string,
+  victim: NetPlayer,
+  amount: number,
+  headshot = false,
+): void {
+  if (!victim.alive || amount <= 0) return;
+  victim.hp = Math.max(0, victim.hp - amount);
+  send(victim.ws, {
+    type: "damage",
+    amount,
+    hp: victim.hp,
+    attackerId,
+  });
+  const shooter = players.get(attackerId);
+  if (shooter && shooter.id !== victim.id) {
+    send(shooter.ws, {
+      type: "hitConfirm",
+      targetId: victim.id,
+      isHeadshot: headshot,
+      damage: amount,
+    });
+  }
+  if (victim.hp <= 0) {
+    victim.alive = false;
+    victim.deaths += 1;
+    if (shooter) shooter.kills += 1;
+    victim.respawnTick = tick + RESPAWN_TICKS;
+    abilityRt.resetStatus(victim);
+    broadcast({
+      type: "killFeed",
+      killerId: attackerId,
+      victimId: victim.id,
+      isHeadshot: headshot,
+    });
+    if (shooter) onGunGameKill(shooter);
+  }
 }
 
 function simulatePlayer(p: NetPlayer): void {
@@ -303,7 +428,7 @@ function simulatePlayer(p: NetPlayer): void {
 
   if (!p.alive) {
     if (tick >= p.respawnTick) {
-      p.state = assignSpawn(p.team);
+      p.state = assignSpawn(p.team, p.id);
       p.hp = MAX_HP;
       p.alive = true;
       p.ammo = weapon.magSize;
@@ -311,6 +436,7 @@ function simulatePlayer(p: NetPlayer): void {
       p.sprayIndex = 0;
       p.fireHeld = false;
       p.reloadHeld = false;
+      abilityRt.resetStatus(p);
     }
     return;
   }
@@ -320,7 +446,29 @@ function simulatePlayer(p: NetPlayer): void {
     p.ammo = weapon.magSize;
   }
 
-  applyMovement(p.state, buttons, TICK_DT, arena.solids, speedOf(p));
+  const frozen = tick < p.status.frozenUntil;
+  const moveButtons = frozen
+    ? {
+        ...buttons,
+        forward: false,
+        back: false,
+        left: false,
+        right: false,
+        jump: false,
+      }
+    : buttons;
+
+  applyMovement(p.state, moveButtons, TICK_DT, arena.solids, speedOf(p));
+
+  if (matchMode === "ability") {
+    const others = [...players.values()];
+    abilityRt.tryUseAbility(tick, p, 1, buttons, others, (atk, vic, amt, hs) => {
+      applyRawDamage(atk.id, vic as NetPlayer, amt, hs);
+    });
+    abilityRt.tryUseAbility(tick, p, 2, buttons, others, (atk, vic, amt, hs) => {
+      applyRawDamage(atk.id, vic as NetPlayer, amt, hs);
+    });
+  }
 
   const reloadEdge = buttons.reload && !p.reloadHeld;
   p.fireHeld = buttons.fire;
@@ -330,6 +478,7 @@ function simulatePlayer(p: NetPlayer): void {
 
   if (reloadEdge) tryReload(p);
   if (buttons.fire && !p.reloading) {
+    if (matchMode === "ability") abilityRt.breakVeilOnFire(p, tick);
     tryFire(p);
   }
 }
@@ -340,21 +489,54 @@ function tickOnce(): void {
     simulatePlayer(p);
   }
 
+  if (matchMode === "ability") {
+    abilityRt.tickWorld(tick, [...players.values()], (attackerId, victim, amount) => {
+      if (attackerId === "burn") {
+        applyRawDamage(victim.id, victim as NetPlayer, amount, false);
+        return;
+      }
+      applyRawDamage(attackerId, victim as NetPlayer, amount, false);
+    });
+
+    for (const fx of abilityRt.flushFx()) {
+      broadcast({ type: "abilityFx", ...fx });
+    }
+  }
+
   poseHistory.push({ tick, poses: clonePoses(currentPoses()) });
   while (poseHistory.length > HISTORY_MAX) poseHistory.shift();
 
   const all = [...players.values()].map(toSnapshot);
+  const props = matchMode === "ability" ? abilityRt.listProps() : [];
   for (const p of players.values()) {
     send(p.ws, {
       type: "snapshot",
       tick,
       ackSeq: p.lastProcessedSeq,
       players: all,
+      props,
     });
   }
 }
 
-function spawnPlayer(ws: WebSocket, classId: ClassId): void {
+function changePlayerClass(p: NetPlayer, classId: ClassId): void {
+  if (matchMode !== "ability") return;
+  if (tick < p.lastClassChangeTick + CLASS_CHANGE_TICKS) return;
+  const cls = getClass(classId);
+  p.classId = cls.id;
+  p.ammo = cls.weapon.magSize;
+  p.reloading = false;
+  p.sprayIndex = 0;
+  p.lastClassChangeTick = tick;
+  abilityRt.resetStatus(p);
+  broadcast({ type: "classChanged", playerId: p.id, classId: cls.id });
+}
+
+function spawnPlayer(ws: WebSocket, classId: ClassId, mode: GameMode): void {
+  if (matchMode === null) {
+    matchMode = mode;
+    gunGameWinnerId = null;
+  }
   const id = String(nextId++);
   const team = pickTeam();
   const cls = getClass(classId);
@@ -363,10 +545,13 @@ function spawnPlayer(ws: WebSocket, classId: ClassId): void {
     team,
     classId: cls.id,
     ws,
-    state: assignSpawn(team),
+    state: assignSpawn(team, id),
     hp: MAX_HP,
     alive: true,
-    ammo: cls.weapon.magSize,
+    ammo:
+      matchMode === "gun_game"
+        ? gunGameWeapon(0).magSize
+        : cls.weapon.magSize,
     reloading: false,
     reloadDoneTick: 0,
     lastFireTick: -999,
@@ -380,11 +565,18 @@ function spawnPlayer(ws: WebSocket, classId: ClassId): void {
     inputQueue: [],
     lastButtons: 0,
     lean: 0,
+    status: emptyStatus(),
+    ab1ReadyTick: 0,
+    ab2ReadyTick: 0,
+    ability1Held: false,
+    ability2Held: false,
+    lastClassChangeTick: -CLASS_CHANGE_TICKS,
+    gunLevel: 0,
   };
   players.set(id, player);
 
   console.log(
-    `[server] join ${id} team=${team} class=${cls.id} players=${players.size}`,
+    `[server] join ${id} mode=${matchMode} team=${team} class=${cls.id} players=${players.size}`,
   );
 
   send(ws, {
@@ -392,8 +584,10 @@ function spawnPlayer(ws: WebSocket, classId: ClassId): void {
     playerId: id,
     team,
     classId: cls.id,
+    mode: matchMode!,
     tick,
     players: [...players.values()].map(toSnapshot),
+    props: matchMode === "ability" ? abilityRt.listProps() : [],
   });
   broadcast({ type: "playerJoined", player: toSnapshot(player) }, id);
 
@@ -402,6 +596,10 @@ function spawnPlayer(ws: WebSocket, classId: ClassId): void {
       players.delete(id);
       broadcast({ type: "playerLeft", playerId: id });
       console.log(`[server] leave ${id} players=${players.size}`);
+      if (players.size === 0) {
+        matchMode = null;
+        gunGameWinnerId = null;
+      }
     }
   });
 }
@@ -417,8 +615,19 @@ function onMessage(ws: WebSocket, player: NetPlayer | null, raw: string): void {
 
   if (msg.type === "join") {
     if (player) return;
-    const classId = isClassId(msg.classId) ? msg.classId : "rifleman";
-    spawnPlayer(ws, classId);
+    const classId = isClassId(msg.classId) ? msg.classId : "frostbinder";
+    const mode = isGameMode(msg.mode) ? msg.mode : "ability";
+    // If a match is already running, force the active mode so everyone shares one lobby.
+    const resolved =
+      matchMode === null ? mode : matchMode;
+    spawnPlayer(ws, classId, resolved);
+    return;
+  }
+
+  if (msg.type === "changeClass") {
+    if (!player) return;
+    if (!isClassId(msg.classId)) return;
+    changePlayerClass(player, msg.classId);
     return;
   }
 

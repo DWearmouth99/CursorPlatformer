@@ -90,6 +90,8 @@ export function createInput(initialYaw = 0) {
       fire: mouseLeft && document.pointerLockElement != null,
       reload: keys.has("KeyR"),
       ads: mouseRight && document.pointerLockElement != null,
+      ability1: keys.has("Digit1") || keys.has("Numpad1"),
+      ability2: keys.has("Digit2") || keys.has("Numpad2"),
     };
   }
 
@@ -116,6 +118,14 @@ export function createInput(initialYaw = 0) {
     return keys.has("Tab");
   }
 
+  function isClassMenuHeld(): boolean {
+    return keys.has("KeyC");
+  }
+
+  function keyDown(code: string): boolean {
+    return keys.has(code);
+  }
+
   function applyRecoil(pitchRad: number, yawRad: number): void {
     look.pitch += pitchRad;
     look.yaw += yawRad;
@@ -129,6 +139,8 @@ export function createInput(initialYaw = 0) {
     getLean,
     setAdsSensMult,
     isScoreboardOpen,
+    isClassMenuHeld,
+    keyDown,
     applyRecoil,
     bind,
     unbind,

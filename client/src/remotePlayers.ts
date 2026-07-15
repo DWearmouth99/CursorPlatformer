@@ -124,8 +124,21 @@ export function createRemotePlayers(scene: THREE.Scene) {
 
       entry.deathT = 0;
       entry.root.rotation.x = 0;
-      (entry.torso.material as THREE.MeshStandardMaterial).transparent = false;
-      (entry.torso.material as THREE.MeshStandardMaterial).opacity = 1;
+      const veiled = !!r.veiled;
+      const mats = [
+        entry.torso,
+        entry.head,
+        entry.armL,
+        entry.armR,
+        entry.legL,
+        entry.legR,
+      ];
+      for (const m of mats) {
+        const mat = m.material as THREE.MeshStandardMaterial;
+        mat.transparent = veiled;
+        mat.opacity = veiled ? 0.22 : 1;
+        mat.depthWrite = !veiled;
+      }
 
       const dx = r.position.x - entry.lastPos.x;
       const dz = r.position.z - entry.lastPos.z;
