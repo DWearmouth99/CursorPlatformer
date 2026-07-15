@@ -169,6 +169,7 @@ export type ShotMsg = {
   origin: Vec3;
   end: Vec3;
   hitPlayer: boolean;
+  weaponId?: string;
 };
 
 export type AbilityFxMsg = {

@@ -20,6 +20,7 @@ import {
   gunGameWeapon,
   isClassId,
   lagCompRewindTicks,
+  meleeConeHits,
   pickFfaSpawn,
   pickSpawn,
   serverHitscan,
@@ -312,37 +313,78 @@ export function createLobby(
     const spread = weapon.spreadDeg * (ads ? weapon.adsSpreadMult : 1);
 
     let anyHit = false;
-    let lastEnd = origin;
+    let lastEnd = {
+      x: origin.x,
+      y: origin.y,
+      z: origin.z,
+    };
     const damageByTarget = new Map<string, { dmg: number; head: boolean }>();
 
-    for (let pellet = 0; pellet < weapon.pellets; pellet++) {
-      const aim = spreadAngles(
-        baseYaw,
-        basePitch,
-        spread,
-        tick * 17 + shooter.lastProcessedSeq * 13 + pellet * 91,
-      );
-      const { hit, end } = serverHitscan(
-        origin,
-        aim.yaw,
-        aim.pitch,
-        shooter.id,
-        poses,
-        solids,
-        weapon.maxRange ?? 200,
-      );
-      lastEnd = end;
-      if (!hit) continue;
+    const applyHit = (
+      playerId: string,
+      dmg: number,
+      head: boolean,
+      point: { x: number; y: number; z: number },
+    ) => {
       anyHit = true;
-      const dmg = hit.isHeadshot
-        ? weapon.damage * weapon.headshotMultiplier
-        : weapon.damage;
-      const prev = damageByTarget.get(hit.playerId);
+      lastEnd = point;
+      const prev = damageByTarget.get(playerId);
       if (!prev) {
-        damageByTarget.set(hit.playerId, { dmg, head: hit.isHeadshot });
+        damageByTarget.set(playerId, { dmg, head });
       } else {
         prev.dmg += dmg;
-        prev.head = prev.head || hit.isHeadshot;
+        prev.head = prev.head || head;
+      }
+    };
+
+    if (weapon.meleeCone != null && weapon.maxRange != null) {
+      const hits = meleeConeHits(
+        origin,
+        baseYaw,
+        basePitch,
+        shooter.id,
+        poses,
+        weapon.maxRange,
+        weapon.meleeCone,
+      );
+      for (const hit of hits) {
+        applyHit(hit.playerId, weapon.damage, false, hit.point);
+      }
+      if (hits.length === 0) {
+        const { end } = serverHitscan(
+          origin,
+          baseYaw,
+          basePitch,
+          shooter.id,
+          poses,
+          solids,
+          weapon.maxRange,
+        );
+        lastEnd = end;
+      }
+    } else {
+      for (let pellet = 0; pellet < weapon.pellets; pellet++) {
+        const aim = spreadAngles(
+          baseYaw,
+          basePitch,
+          spread,
+          tick * 17 + shooter.lastProcessedSeq * 13 + pellet * 91,
+        );
+        const { hit, end } = serverHitscan(
+          origin,
+          aim.yaw,
+          aim.pitch,
+          shooter.id,
+          poses,
+          solids,
+          weapon.maxRange ?? 200,
+        );
+        lastEnd = end;
+        if (!hit) continue;
+        const dmg = hit.isHeadshot
+          ? weapon.damage * weapon.headshotMultiplier
+          : weapon.damage;
+        applyHit(hit.playerId, dmg, hit.isHeadshot, hit.point);
       }
     }
 
@@ -352,6 +394,7 @@ export function createLobby(
       origin: { x: origin.x, y: origin.y, z: origin.z },
       end: lastEnd,
       hitPlayer: anyHit,
+      weaponId: weapon.id,
     });
 
     for (const [victimId, info] of damageByTarget) {

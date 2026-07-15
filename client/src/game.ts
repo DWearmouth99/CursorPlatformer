@@ -11,7 +11,9 @@ import {
   TICK_RATE,
   eyePosition,
   getClass,
+  getWeaponById,
   gunGameWeapon,
+  gunGameWeaponById,
   length2d,
   recoilOffsetRad,
   serverHitscan,
@@ -89,6 +91,19 @@ export async function startGame(container: HTMLElement) {
     return gameMode === "gun_game"
       ? gunGameWeapon(gunLevel)
       : getClass(classId).weapon;
+  }
+
+  let lastWeaponId = "";
+  function syncWeaponVisual(): void {
+    const w = activeWeapon();
+    if (w.id === lastWeaponId) return;
+    lastWeaponId = w.id;
+    fx.setWeapon(w);
+  }
+
+  function resolveWeapon(id?: string): WeaponDef | null {
+    if (!id) return null;
+    return gunGameWeaponById(id) ?? getWeaponById(id);
   }
 
   function syncModeUi(): void {
@@ -247,7 +262,13 @@ export async function startGame(container: HTMLElement) {
         hud.pushKillFeed(`${msg.killerId} → ${msg.victimId}${hs}`);
       } else if (msg.type === "shot") {
         if (msg.shooterId === localId) return;
-        fx.remoteShot(msg.origin, msg.end, msg.hitPlayer, performance.now());
+        fx.remoteShot(
+          msg.origin,
+          msg.end,
+          msg.hitPlayer,
+          performance.now(),
+          resolveWeapon(msg.weaponId),
+        );
         audio.shoot(false);
       } else if (msg.type === "abilityFx") {
         abilityView.playFx(msg);
@@ -384,7 +405,7 @@ export async function startGame(container: HTMLElement) {
       camera.rotation.y = input.look.yaw;
       camera.rotation.x = input.look.pitch;
       camera.rotation.z = -lean * LEAN_ROLL;
-      fx.localShot(end, now);
+      fx.localShot(end, now, weapon);
       audio.shoot(true);
     }
     if (!buttons.fire) localSpray = 0;
@@ -464,6 +485,7 @@ export async function startGame(container: HTMLElement) {
 
     remotes.sync(interpolator.sample(localId, now), frameDt);
     abilityView.update(now);
+    syncWeaponVisual();
     const spd = length2d(player.velocity);
     const ads = buttons.ads && localAlive;
     fx.update(now, frameDt, localAlive, localAlive && player.grounded && spd > 1.5, {

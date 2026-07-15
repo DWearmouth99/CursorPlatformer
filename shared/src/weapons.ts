@@ -32,6 +32,39 @@ export type WeaponDef = {
   recoilPattern: readonly [number, number][];
   /** Optional hitscan range clamp (meters). */
   maxRange?: number;
+  /**
+   * Melee / blast: also hits any enemy in a forward cone within maxRange
+   * (dot product threshold vs look direction).
+   */
+  meleeCone?: number;
+  /** Visual identity for tracers, muzzle, viewmodel. */
+  fx?: WeaponFx;
+};
+
+export type WeaponShape =
+  | "rifle"
+  | "smg"
+  | "shotgun"
+  | "sniper"
+  | "pistol"
+  | "melee"
+  | "cannon"
+  | "weird";
+
+export type TracerStyle = "line" | "thick" | "dots" | "beam" | "arc";
+
+export type WeaponFx = {
+  primary: number;
+  accent: number;
+  tracer: number;
+  muzzle: number;
+  shape: WeaponShape;
+  tracerStyle: TracerStyle;
+  tracerLife: number;
+  kickScale: number;
+  fovKickScale: number;
+  flashScale: number;
+  impactScale: number;
 };
 
 export type ClassId =
@@ -105,6 +138,19 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     adsSensMult: 0.68,
     scopeStyle: "optic",
     recoilPattern: NEEDLE_RECOIL,
+    fx: {
+      primary: 0x7ec8e3,
+      accent: 0xd6f3ff,
+      tracer: 0xa8e7ff,
+      muzzle: 0xe8f7ff,
+      shape: "rifle",
+      tracerStyle: "beam",
+      tracerLife: 0.1,
+      kickScale: 0.9,
+      fovKickScale: 0.85,
+      flashScale: 0.9,
+      impactScale: 1,
+    },
   },
   ember_burst: {
     id: "ember_burst",
@@ -121,6 +167,19 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     adsSensMult: 0.75,
     scopeStyle: "iron",
     recoilPattern: EMBER_RECOIL,
+    fx: {
+      primary: 0xe07a3a,
+      accent: 0x5c2a12,
+      tracer: 0xff8c42,
+      muzzle: 0xffc98b,
+      shape: "smg",
+      tracerStyle: "dots",
+      tracerLife: 0.08,
+      kickScale: 0.7,
+      fovKickScale: 0.65,
+      flashScale: 1.1,
+      impactScale: 1,
+    },
   },
   shade_carbine: {
     id: "shade_carbine",
@@ -137,6 +196,19 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     adsSensMult: 0.55,
     scopeStyle: "optic",
     recoilPattern: SHADE_RECOIL,
+    fx: {
+      primary: 0x8b6bc7,
+      accent: 0x2a1f3d,
+      tracer: 0xc9a7ff,
+      muzzle: 0xe6d6ff,
+      shape: "rifle",
+      tracerStyle: "line",
+      tracerLife: 0.09,
+      kickScale: 1.05,
+      fovKickScale: 1,
+      flashScale: 0.85,
+      impactScale: 1.1,
+    },
   },
   coil_scatter: {
     id: "coil_scatter",
@@ -147,12 +219,25 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     reloadMs: 2700,
     fireRate: 1.4,
     pellets: 6,
-    spreadDeg: 2.8,
+    spreadDeg: 2.6,
     adsSpreadMult: 0.5,
     adsFov: 60,
     adsSensMult: 0.8,
     scopeStyle: "iron",
     recoilPattern: COIL_RECOIL,
+    fx: {
+      primary: 0x5ec4ff,
+      accent: 0x1a3344,
+      tracer: 0x9ef0ff,
+      muzzle: 0xd9f8ff,
+      shape: "shotgun",
+      tracerStyle: "dots",
+      tracerLife: 0.1,
+      kickScale: 1.5,
+      fovKickScale: 1.4,
+      flashScale: 1.3,
+      impactScale: 1.2,
+    },
   },
 };
 
@@ -238,6 +323,11 @@ export function abilityOf(id: ClassId, slot: 1 | 2): AbilityDef {
 
 export function isAbilityKind(v: unknown): v is AbilityKind {
   return typeof v === "string" && v in ABILITIES;
+}
+
+export function getWeaponById(id: string): WeaponDef | null {
+  if (id in WEAPONS) return WEAPONS[id as WeaponId];
+  return null;
 }
 
 /** @deprecated */

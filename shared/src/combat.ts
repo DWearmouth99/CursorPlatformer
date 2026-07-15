@@ -263,3 +263,43 @@ export function serverHitscan(
     },
   };
 }
+
+/**
+ * Forward-cone blast for melee / slap weapons.
+ * Returns living enemies within range whose direction aligns with look (dot >= coneDot).
+ */
+export function meleeConeHits(
+  origin: Vec3,
+  yaw: number,
+  pitch: number,
+  shooterId: string,
+  poses: readonly PoseSample[],
+  maxRange: number,
+  coneDot = 0.35,
+): HitscanHit[] {
+  const dir = forwardFromAngles(yaw, pitch, vec3());
+  const hits: HitscanHit[] = [];
+  for (const pose of poses) {
+    if (pose.id === shooterId || !pose.alive) continue;
+    const tx = pose.position.x - origin.x;
+    const ty = pose.position.y + 1 - origin.y;
+    const tz = pose.position.z - origin.z;
+    const dist = Math.hypot(tx, ty, tz);
+    if (dist < 0.2 || dist > maxRange) continue;
+    const nd = 1 / dist;
+    const dot = tx * nd * dir.x + ty * nd * dir.y + tz * nd * dir.z;
+    if (dot < coneDot) continue;
+    hits.push({
+      playerId: pose.id,
+      isHeadshot: false,
+      distance: dist,
+      point: {
+        x: pose.position.x,
+        y: pose.position.y + 1,
+        z: pose.position.z,
+      },
+    });
+  }
+  hits.sort((a, b) => a.distance - b.distance);
+  return hits;
+}
