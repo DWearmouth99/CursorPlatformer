@@ -9,12 +9,32 @@ import {
 } from "@fps/shared";
 import { authHeader } from "./session.js";
 
+/**
+ * REST base for split deploy (Vercel client → Render API).
+ * Prefer VITE_API_URL; else derive https:// from VITE_WS_URL; else same-origin.
+ */
+export function clientApiUrl(): string {
+  const api = import.meta.env.VITE_API_URL;
+  if (typeof api === "string" && api.trim()) {
+    return api.trim().replace(/\/$/, "");
+  }
+  const ws = import.meta.env.VITE_WS_URL;
+  if (typeof ws === "string" && ws.trim()) {
+    return ws
+      .trim()
+      .replace(/^wss:/i, "https:")
+      .replace(/^ws:/i, "http:")
+      .replace(/\/$/, "");
+  }
+  return resolveApiUrl();
+}
+
 async function apiFetch<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
   try {
-    const res = await fetch(`${resolveApiUrl()}${path}`, {
+    const res = await fetch(`${clientApiUrl()}${path}`, {
       ...init,
       headers: {
         "Content-Type": "application/json",

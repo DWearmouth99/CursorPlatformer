@@ -21,13 +21,16 @@ One Web Service can host both the static client and the WebSocket server.
 Vercel can only host the static client. Point it at Render with:
 
 ```bash
-# client/.env.production (or Vercel env var)
+# client/.env.production (or Vercel Environment Variables — required for production builds)
 VITE_WS_URL=wss://cursorplatformer.onrender.com
+VITE_API_URL=https://cursorplatformer.onrender.com
 ```
 
-Redeploy the Vercel app after setting that. The game server must still run on Render (`npm start`).
+Redeploy the **Vercel** app after setting those (Vite bakes them in at build time).  
+Accounts, lobby browser, and matchmaking use `VITE_API_URL`; gameplay uses `VITE_WS_URL`.  
+If `VITE_API_URL` is omitted, the client derives `https://…` from `VITE_WS_URL`.
 
-Locally the Vite app still uses `ws://localhost:3001`.
+The game server must still run on Render (`npm start`). Free-tier Render may sleep — first connect can take ~30–60s.
 
 ## Install
 
