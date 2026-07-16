@@ -1,10 +1,15 @@
 import { WebSocket } from "ws";
 import {
-  DEFAULT_HILL,
   GUN_GAME_LENGTH,
+  HILL_POSITIONS,
+  HILL_ROTATE_POINTS,
+  HILL_ROTATE_SEC,
   KOTH_POINTS_PER_SEC,
   MAX_HP,
+  PLAYER_EYE_STAND,
   RESPAWN_MS,
+  SPAWN_LOS_RANGE_M,
+  SPAWN_PROTECT_MS,
   TICK_DT,
   TICK_MS,
   TICK_RATE,
@@ -14,19 +19,22 @@ import {
   buttonsToBits,
   clonePoses,
   createMoveState,
+  damageFalloffMult,
   defaultWeaponForMode,
   emptyStatus,
   eyePosition,
   findLoadoutWeapon,
+  getMapById,
   getPlayerPoseAtTime,
   gunGameWeapon,
   lagCompRewindTicks,
+  lineBlockedBySolids,
   loadoutOptionsForMode,
   meleeConeHits,
   modeNeedsLoadout,
   modeTitle,
+  pickFfaSpawnFrom,
   resolveFireStyle,
-  pickFfaSpawn,
   scoreToWin,
   serverHitscan,
   spreadAngles,
@@ -40,18 +48,21 @@ import {
   type PoseHistoryFrame,
   type ServerMsg,
   type SnapshotPlayer,
+  type SpawnZone,
   type Team,
   type WeaponDef,
 } from "@fps/shared";
 import { forgetBotMind, thinkBot } from "./bots.js";
 
 const RESPAWN_TICKS = Math.round((RESPAWN_MS / 1000) * TICK_RATE);
+const SPAWN_PROTECT_TICKS = Math.round((SPAWN_PROTECT_MS / 1000) * TICK_RATE);
 const INPUT_QUEUE_MAX = 12;
 const HISTORY_MAX = Math.ceil(350 / TICK_MS);
 const DUMMY_CLASS: ClassId = "frostbinder";
 /** Up to 3 filler bots; seats shrink as extra humans join. */
 const BOT_SLOT_NAMES = ["Bot-1", "Bot-2", "Bot-3"] as const;
 const KOTH_POINTS_PER_TICK = KOTH_POINTS_PER_SEC / TICK_RATE;
+const HILL_ROTATE_TICKS = Math.round(HILL_ROTATE_SEC * TICK_RATE);
 
 export type NetPlayer = {
   id: string;
@@ -90,6 +101,8 @@ export type NetPlayer = {
   /** Shots left in current burst (procedural burst weapons). */
   burstRemaining: number;
   burstNextTick: number;
+  /** Invulnerable until this tick (spawn protection). */
+  spawnProtectedUntilTick: number;
 };
 
 function send(ws: WebSocket | null, msg: ServerMsg): void {
@@ -112,11 +125,18 @@ export type Lobby = {
 export type LobbyCreateOptions = {
   mode: GameMode;
   solids: readonly AABB[];
+  spawns: readonly SpawnZone[];
   mapId: string;
   lobbyId: string;
   lobbyName: string;
   allocId: () => string;
   onMatchComplete?: (winnerId: string) => void;
+  /** Called when the victory freeze ends — return next map to rotate into. */
+  nextMap?: () => {
+    mapId: string;
+    solids: readonly AABB[];
+    spawns: readonly SpawnZone[];
+  } | null;
 };
 
 export type JoinMeta = {
@@ -127,22 +147,27 @@ export type JoinMeta = {
 export function createLobby(options: LobbyCreateOptions): Lobby {
   const {
     mode,
-    solids,
-    mapId,
     lobbyId,
     lobbyName,
     allocId,
     onMatchComplete,
+    nextMap,
   } = options;
+  let solids = options.solids;
+  let spawns = options.spawns;
+  let mapId = options.mapId;
   const players = new Map<string, NetPlayer>();
   const poseHistory: PoseHistoryFrame[] = [];
   let tick = 0;
   let matchWinnerId: string | null = null;
   /** After a win, freeze combat until this tick, then reset. */
   let matchFreezeUntilTick = 0;
-  const hill = { ...DEFAULT_HILL };
+  const hill = { ...HILL_POSITIONS[0]! };
+  let hillIndex = 0;
   let hillControllerId: string | null = null;
   let hillContested = false;
+  let hillPointsAcc = 0;
+  let hillSinceTick = 0;
 
   function starterWeapon(): WeaponDef {
     if (modeNeedsLoadout(mode)) {
@@ -162,6 +187,18 @@ export function createLobby(options: LobbyCreateOptions): Lobby {
     matchFreezeUntilTick = 0;
     hillControllerId = null;
     hillContested = false;
+    hillIndex = 0;
+    hillPointsAcc = 0;
+    hillSinceTick = tick;
+    const home = HILL_POSITIONS[0]!;
+    hill.x = home.x;
+    hill.y = home.y;
+    hill.z = home.z;
+    hill.radius = home.radius;
+    // Mark dead so spawn avoid ignores stale positions from the previous map/round
+    for (const p of players.values()) {
+      p.alive = false;
+    }
     for (const p of players.values()) {
       p.gunLevel = 0;
       p.score = 0;
@@ -176,9 +213,33 @@ export function createLobby(options: LobbyCreateOptions): Lobby {
       p.sprayIndex = 0;
       p.kills = 0;
       p.deaths = 0;
+      p.hp = MAX_HP;
+      p.alive = true;
+      p.respawnTick = 0;
+      p.status = emptyStatus();
+      p.burstRemaining = 0;
+      p.inputQueue.length = 0;
+      p.state = assignSpawn(p.team, p.id);
+      grantSpawnProtection(p);
     }
-    console.log(`[lobby:${lobbyId}] new ${modeTitle(mode)} round`);
+    console.log(`[lobby:${lobbyId}] new ${modeTitle(mode)} round on ${mapId}`);
     syncBots();
+  }
+
+  function rotateAndReset(): void {
+    const next = nextMap?.() ?? null;
+    if (next) {
+      mapId = next.mapId;
+      solids = next.solids;
+      spawns = next.spawns;
+      broadcast({
+        type: "mapChange",
+        mapId,
+        mapName: getMapById(mapId)?.name,
+      });
+      console.log(`[lobby:${lobbyId}] map → ${mapId}`);
+    }
+    resetMatchRound();
   }
 
   function broadcast(msg: ServerMsg, exceptId?: string): void {
@@ -253,6 +314,7 @@ export function createLobby(options: LobbyCreateOptions): Lobby {
       smoothedRttMs: 120,
       burstRemaining: 0,
       burstNextTick: 0,
+      spawnProtectedUntilTick: tick + SPAWN_PROTECT_TICKS,
     };
   }
 
@@ -399,6 +461,7 @@ export function createLobby(options: LobbyCreateOptions): Lobby {
       weaponId: w.id,
       score: p.score,
       displayName: p.displayName,
+      protected: tick < p.spawnProtectedUntilTick ? true : undefined,
     };
   }
 
@@ -421,13 +484,43 @@ export function createLobby(options: LobbyCreateOptions): Lobby {
   }
 
   function assignSpawn(_team: Team, playerId?: string): PlayerMoveState {
-    const spawn = pickFfaSpawn(allAlivePositions(playerId), 22);
+    const eyes = [...players.values()]
+      .filter((p) => p.alive && p.id !== playerId)
+      .map((p) =>
+        eyePosition(p.state.position, p.state.crouching, p.state.yaw, p.lean),
+      );
+    const spawn = pickFfaSpawnFrom(
+      spawns,
+      allAlivePositions(playerId),
+      22,
+      (candidate) => {
+        const origin = {
+          x: candidate.position.x,
+          y: candidate.position.y + PLAYER_EYE_STAND,
+          z: candidate.position.z,
+        };
+        for (const eye of eyes) {
+          const dist = Math.hypot(
+            eye.x - origin.x,
+            eye.y - origin.y,
+            eye.z - origin.z,
+          );
+          if (dist > SPAWN_LOS_RANGE_M) continue;
+          if (!lineBlockedBySolids(origin, eye, solids)) return true;
+        }
+        return false;
+      },
+    );
     return createMoveState(
       spawn.position.x,
       spawn.position.y,
       spawn.position.z,
       spawn.yaw,
     );
+  }
+
+  function grantSpawnProtection(p: NetPlayer): void {
+    p.spawnProtectedUntilTick = tick + SPAWN_PROTECT_TICKS;
   }
 
   function currentPoses() {
@@ -474,10 +567,35 @@ export function createLobby(options: LobbyCreateOptions): Lobby {
     );
   }
 
-  function onPlayerKill(shooter: NetPlayer): void {
+  function onPlayerKill(
+    shooter: NetPlayer,
+    victim: NetPlayer,
+    weapon: WeaponDef,
+  ): void {
     if (matchWinnerId) return;
 
     if (mode === "gun_game") {
+      if (
+        resolveFireStyle(weapon) === "melee" &&
+        victim.gunLevel > 0
+      ) {
+        victim.gunLevel -= 1;
+        const demoted = gunGameWeapon(victim.gunLevel);
+        victim.weaponId = demoted.id;
+        victim.ammo = demoted.magSize;
+        victim.reloading = false;
+        victim.sprayIndex = 0;
+        broadcast({
+          type: "gunAdvance",
+          playerId: victim.id,
+          gunLevel: victim.gunLevel,
+          weaponName: demoted.name,
+        });
+        console.log(
+          `[lobby:${lobbyId}] ${victim.displayName} demoted → ${victim.gunLevel + 1} ${demoted.name}`,
+        );
+      }
+
       if (shooter.gunLevel >= GUN_GAME_LENGTH - 1) {
         declareWinner(shooter);
         return;
@@ -526,11 +644,30 @@ export function createLobby(options: LobbyCreateOptions): Lobby {
     return true;
   }
 
+  function rotateHill(): void {
+    hillIndex = (hillIndex + 1) % HILL_POSITIONS.length;
+    const next = HILL_POSITIONS[hillIndex]!;
+    hill.x = next.x;
+    hill.y = next.y;
+    hill.z = next.z;
+    hill.radius = next.radius;
+    hillControllerId = null;
+    hillContested = false;
+    hillPointsAcc = 0;
+    hillSinceTick = tick;
+    console.log(`[lobby:${lobbyId}] hill → #${hillIndex} (${hill.x}, ${hill.z})`);
+  }
+
   function tickHill(): void {
     if (mode !== "king_of_the_hill" || matchWinnerId) {
       hillControllerId = null;
       hillContested = false;
       return;
+    }
+
+    // Time-based rotate even if nobody is scoring
+    if (tick - hillSinceTick >= HILL_ROTATE_TICKS) {
+      rotateHill();
     }
 
     const inside: NetPlayer[] = [];
@@ -556,9 +693,14 @@ export function createLobby(options: LobbyCreateOptions): Lobby {
     hillControllerId = sole.id;
     hillContested = false;
     sole.score += KOTH_POINTS_PER_TICK;
+    hillPointsAcc += KOTH_POINTS_PER_TICK;
     if (sole.score >= scoreToWin(mode)) {
       sole.score = scoreToWin(mode);
       declareWinner(sole);
+      return;
+    }
+    if (hillPointsAcc >= HILL_ROTATE_POINTS) {
+      rotateHill();
     }
   }
 
@@ -590,13 +732,19 @@ export function createLobby(options: LobbyCreateOptions): Lobby {
       victim.deaths += 1;
       if (shooter) shooter.kills += 1;
       victim.respawnTick = tick + RESPAWN_TICKS;
+      const killWeapon = shooter ? weaponOf(shooter) : gunGameWeapon(0);
+      const meleeDemote =
+        mode === "gun_game" &&
+        resolveFireStyle(killWeapon) === "melee" &&
+        victim.gunLevel > 0;
       broadcast({
         type: "killFeed",
         killerId: attackerId,
         victimId: victim.id,
         isHeadshot: headshot,
+        meleeDemote: meleeDemote || undefined,
       });
-      if (shooter) onPlayerKill(shooter);
+      if (shooter) onPlayerKill(shooter, victim, killWeapon);
     }
   }
 
@@ -628,6 +776,7 @@ export function createLobby(options: LobbyCreateOptions): Lobby {
 
     shooter.lastFireTick = tick;
     shooter.ammo -= 1;
+    shooter.spawnProtectedUntilTick = 0;
     if (shooter.ammo <= 0) tryReload(shooter);
     if (isBurst) {
       shooter.burstRemaining = Math.max(0, shooter.burstRemaining - 1);
@@ -755,9 +904,10 @@ export function createLobby(options: LobbyCreateOptions): Lobby {
         );
         lastEnd = end;
         if (!hit) continue;
+        const fallen = weapon.damage * damageFalloffMult(weapon, hit.distance);
         const dmg = hit.isHeadshot
-          ? weapon.damage * weapon.headshotMultiplier
-          : weapon.damage;
+          ? fallen * weapon.headshotMultiplier
+          : fallen;
         applyHit(hit.playerId, dmg, hit.isHeadshot, hit.point);
       }
     }
@@ -774,6 +924,7 @@ export function createLobby(options: LobbyCreateOptions): Lobby {
     for (const [victimId, info] of damageByTarget) {
       const victim = players.get(victimId);
       if (!victim || !victim.alive) continue;
+      if (tick < victim.spawnProtectedUntilTick) continue;
       const damage = Math.round(info.dmg);
       victim.hp = Math.max(0, victim.hp - damage);
       applyOnHit(weapon, victim);
@@ -796,13 +947,18 @@ export function createLobby(options: LobbyCreateOptions): Lobby {
         victim.deaths += 1;
         shooter.kills += 1;
         victim.respawnTick = tick + RESPAWN_TICKS;
+        const meleeDemote =
+          mode === "gun_game" &&
+          resolveFireStyle(weapon) === "melee" &&
+          victim.gunLevel > 0;
         broadcast({
           type: "killFeed",
           killerId: shooter.id,
           victimId: victim.id,
           isHeadshot: info.head,
+          meleeDemote: meleeDemote || undefined,
         });
-        onPlayerKill(shooter);
+        onPlayerKill(shooter, victim, weapon);
       }
     }
   }
@@ -861,6 +1017,7 @@ export function createLobby(options: LobbyCreateOptions): Lobby {
         p.sprayIndex = 0;
         p.fireHeld = false;
         p.reloadHeld = false;
+        grantSpawnProtection(p);
       }
       return;
     }
@@ -903,7 +1060,7 @@ export function createLobby(options: LobbyCreateOptions): Lobby {
     tick += 1;
 
     if (matchWinnerId && tick >= matchFreezeUntilTick) {
-      resetMatchRound();
+      rotateAndReset();
     }
 
     const frozen = matchWinnerId != null;

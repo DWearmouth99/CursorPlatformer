@@ -1,4 +1,4 @@
-import { MOVE } from "./constants.js";
+import { FALLOFF_MIN_MULT_DEFAULT, MOVE } from "./constants.js";
 import type { AbilityDef, AbilityKind } from "./abilities.js";
 import { ABILITIES } from "./abilities.js";
 
@@ -32,6 +32,15 @@ export type WeaponDef = {
   recoilPattern: readonly [number, number][];
   /** Optional hitscan range clamp (meters). */
   maxRange?: number;
+  /**
+   * Hitscan damage falloff: full damage until `falloffStart` meters, then
+   * linearly scales down to `falloffMinMult` at `falloffEnd`. Headshots apply
+   * after falloff. Omit for no falloff (snipers / melee / splash).
+   */
+  falloffStart?: number;
+  falloffEnd?: number;
+  /** Damage multiplier at/beyond falloffEnd (default FALLOFF_MIN_MULT_DEFAULT). */
+  falloffMinMult?: number;
   /**
    * Melee / blast: also hits any enemy in a forward cone within maxRange
    * (dot product threshold vs look direction).
@@ -82,6 +91,20 @@ export type WeaponDef = {
   /** Emit a small shell-eject spark on shot. */
   shellEject?: boolean;
 };
+
+/**
+ * Hitscan range falloff multiplier (1 = full damage). Headshot multiplies after this.
+ */
+export function damageFalloffMult(weapon: WeaponDef, distance: number): number {
+  const start = weapon.falloffStart;
+  const end = weapon.falloffEnd;
+  if (start == null || end == null || !(end > start)) return 1;
+  const minMult = weapon.falloffMinMult ?? FALLOFF_MIN_MULT_DEFAULT;
+  if (distance <= start) return 1;
+  if (distance >= end) return minMult;
+  const t = (distance - start) / (end - start);
+  return 1 + (minMult - 1) * t;
+}
 
 export type WeaponAnimProfile =
   | "kick"

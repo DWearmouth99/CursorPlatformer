@@ -110,6 +110,20 @@ export const MOVE = {
 export const MAX_HP = 100;
 export const RESPAWN_MS = 3000;
 
+/** Hitscan damage falloff (meters). Full damage until start, then linear to min mult at end. */
+export const FALLOFF_MIN_MULT_DEFAULT = 0.5;
+/** SMGs / pistols / close-range hitscan. */
+export const FALLOFF_CLOSE_START_M = 18;
+export const FALLOFF_CLOSE_END_M = 42;
+/** Rifles / mid-long hitscan. */
+export const FALLOFF_RIFLE_START_M = 35;
+export const FALLOFF_RIFLE_END_M = 75;
+
+/** Reject spawns with clear LOS to a living enemy within this range (meters). */
+export const SPAWN_LOS_RANGE_M = 40;
+/** Spawn invulnerability duration (ms); cleared early on first shot. */
+export const SPAWN_PROTECT_MS = 1500;
+
 export const TEAM = {
   T: "T",
   CT: "CT",

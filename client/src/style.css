@@ -1219,6 +1219,17 @@ canvas {
   accent-color: #e8b93a;
 }
 
+.menu-setting-row select {
+  flex: 1;
+  font: inherit;
+  padding: 0.25rem 0.4rem;
+  color: #2a160a;
+  background: #f0d9a8;
+  border: 2px solid #5a3a18;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
 .menu-setting-row b {
   min-width: 3.2rem;
   text-align: right;

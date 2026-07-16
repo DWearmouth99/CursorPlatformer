@@ -95,6 +95,7 @@ export function createHud() {
     victimId: string,
     opts: {
       headshot?: boolean;
+      meleeDemote?: boolean;
       localId?: string | null;
       killerName?: string;
       victimName?: string;
@@ -117,7 +118,7 @@ export function createHud() {
 
     const verb = document.createElement("span");
     verb.className = "kill-verb";
-    verb.textContent = opts.headshot ? "⚔" : "▸";
+    verb.textContent = opts.meleeDemote ? "⬇" : opts.headshot ? "⚔" : "▸";
 
     const victim = document.createElement("span");
     victim.className = "kill-name kill-victim";
@@ -128,7 +129,12 @@ export function createHud() {
     );
 
     row.append(killer, verb, victim);
-    if (opts.headshot) {
+    if (opts.meleeDemote) {
+      const tag = document.createElement("span");
+      tag.className = "kill-tag";
+      tag.textContent = "DOWN";
+      row.append(tag);
+    } else if (opts.headshot) {
       const tag = document.createElement("span");
       tag.className = "kill-tag";
       tag.textContent = "HS";

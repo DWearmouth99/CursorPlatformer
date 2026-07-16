@@ -172,7 +172,7 @@ function bodyAABB(pos: Vec3, height: number, radius: number): AABB {
 }
 
 /** Ray–AABB; returns entry distance or null. */
-function rayAABB(origin: Vec3, dir: Vec3, box: AABB): number | null {
+export function rayAABB(origin: Vec3, dir: Vec3, box: AABB): number | null {
   const tests: Array<[number, number, number, number]> = [
     [origin.x, dir.x, box.cx - box.hx, box.cx + box.hx],
     [origin.y, dir.y, box.cy - box.hy, box.cy + box.hy],
@@ -201,6 +201,28 @@ function rayAABB(origin: Vec3, dir: Vec3, box: AABB): number | null {
 
   if (tmax < 0) return null;
   return tmin >= 0 ? tmin : tmax >= 0 ? tmax : null;
+}
+
+/**
+ * True if a solid blocks the segment from origin to target (exclusive of target).
+ * Used for spawn LOS checks — same rayAABB path as hitscan walls.
+ */
+export function lineBlockedBySolids(
+  origin: Vec3,
+  target: Vec3,
+  solids: readonly AABB[],
+): boolean {
+  const dx = target.x - origin.x;
+  const dy = target.y - origin.y;
+  const dz = target.z - origin.z;
+  const dist = Math.hypot(dx, dy, dz);
+  if (dist < 1e-4) return false;
+  const dir = { x: dx / dist, y: dy / dist, z: dz / dist };
+  for (const solid of solids) {
+    const t = rayAABB(origin, dir, solid);
+    if (t != null && t > 0.05 && t < dist - 0.05) return true;
+  }
+  return false;
 }
 
 export function recoilOffsetRad(

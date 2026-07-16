@@ -32,6 +32,10 @@ export const KOTH_SCORE_TO_WIN = 100;
 /** Score earned per second while alone on the hill. */
 export const KOTH_POINTS_PER_SEC = 8;
 export const HILL_RADIUS = 8.5;
+/** Move the hill after this many points are scored on the current site. */
+export const HILL_ROTATE_POINTS = 25;
+/** Or after this many seconds, whichever comes first. */
+export const HILL_ROTATE_SEC = 45;
 
 export type LoadoutOption = {
   id: string;
@@ -46,13 +50,16 @@ export type HillZone = {
   radius: number;
 };
 
-/** Default hill sits mid-arena over the river / wash. */
-export const DEFAULT_HILL: HillZone = {
-  x: 0,
-  y: 0,
-  z: 0,
-  radius: HILL_RADIUS,
-};
+/** Rotating King of the Hill sites (arena-relative). */
+export const HILL_POSITIONS: readonly HillZone[] = [
+  { x: 0, y: 0, z: 0, radius: HILL_RADIUS },
+  { x: 26, y: 0, z: -20, radius: HILL_RADIUS },
+  { x: -28, y: 0, z: 16, radius: HILL_RADIUS },
+  { x: 14, y: 0, z: 28, radius: HILL_RADIUS },
+];
+
+/** Default hill sits mid-arena (first rotation site). */
+export const DEFAULT_HILL: HillZone = { ...HILL_POSITIONS[0]! };
 
 function blunt(w: WeaponDef): string {
   if (w.scopeStyle === "sniper") return "Bolt sniper";

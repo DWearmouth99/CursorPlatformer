@@ -69,7 +69,24 @@ export function pickFfaSpawn(
   minDist = 18,
 ): SpawnZone {
   const { spawns } = getArena();
-  return pickFromCandidates(spawns, avoid, minDist, spawns[0]!);
+  return pickFfaSpawnFrom(spawns, avoid, minDist);
+}
+
+/** Pick a spawn from an explicit list (per-lobby maps; avoids global active level). */
+export function pickFfaSpawnFrom(
+  spawns: readonly SpawnZone[],
+  avoid: readonly Vec3[] = [],
+  minDist = 18,
+  reject?: (spawn: SpawnZone) => boolean,
+): SpawnZone {
+  if (spawns.length === 0) {
+    return {
+      position: { x: 0, y: 1.2, z: 0 },
+      yaw: 0,
+      team: "T",
+    };
+  }
+  return pickFromCandidates([...spawns], avoid, minDist, spawns[0]!, reject);
 }
 
 function pickFromCandidates(
@@ -77,6 +94,7 @@ function pickFromCandidates(
   avoid: readonly Vec3[],
   minDist: number,
   fallback: SpawnZone,
+  reject?: (spawn: SpawnZone) => boolean,
 ): SpawnZone {
   if (candidates.length === 0) return fallback;
 
@@ -87,16 +105,21 @@ function pickFromCandidates(
     [shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!];
   }
 
-  const clear = shuffled.filter((s) =>
-    avoid.every((p) => dist2(s.position, p) >= minDist2),
+  const clear = shuffled.filter(
+    (s) =>
+      avoid.every((p) => dist2(s.position, p) >= minDist2) && !reject?.(s),
   );
   if (clear.length > 0) {
     return clear[Math.floor(Math.random() * clear.length)]!;
   }
 
-  let best = shuffled[0]!;
+  // Prefer LOS-safe even when distance filter fails; else any spawn.
+  const pool = shuffled.filter((s) => !reject?.(s));
+  const ranked = pool.length > 0 ? pool : shuffled;
+
+  let best = ranked[0]!;
   let bestScore = -1;
-  for (const s of shuffled) {
+  for (const s of ranked) {
     let nearest = Infinity;
     for (const p of avoid) {
       nearest = Math.min(nearest, dist2(s.position, p));

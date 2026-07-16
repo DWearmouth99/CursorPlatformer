@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@fps/shared": "*",
+    "n8ao": "^2.0.0",
+    "postprocessing": "^6.39.2",
     "three": "^0.175.0"
   },
   "devDependencies": {

@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
 import type { MapTheme } from "@fps/shared";
+import type { GraphicsQuality } from "./settings";
+import { shadowMapSizeForQuality } from "./settings";
 
 /** Soft fair-weather cloud atlas. */
 function makeCloudTexture(size = 1024, dusty = false): THREE.CanvasTexture {
@@ -95,45 +97,65 @@ function makeSunSpriteTexture(hot = false): THREE.CanvasTexture {
   return tex;
 }
 
+export type AtmosphereOptions = {
+  renderer: THREE.WebGLRenderer;
+  quality: GraphicsQuality;
+  arenaW: number;
+  arenaD: number;
+};
+
+export type Atmosphere = {
+  update: (dt: number, now: number) => void;
+  sunLight: THREE.DirectionalLight;
+  /** Apply quality tier (shadows on/off + map size). */
+  applyQuality: (quality: GraphicsQuality) => void;
+  dispose: () => void;
+};
+
 /**
  * Sky + lighting. Grass = clear blue day; desert = dusty amber heat haze.
+ * Tuned for ACESFilmicToneMapping + PMREM environment.
  */
 export function createAtmosphere(
   scene: THREE.Scene,
   theme: MapTheme = "grass",
-) {
+  opts: AtmosphereOptions,
+): Atmosphere {
   const desert = theme === "desert";
   scene.background = null;
   scene.fog = new THREE.Fog(
-    desert ? 0xd4b896 : 0x9eb8cc,
+    desert ? 0xd4b896 : 0x8eabbf,
     desert ? 48 : 55,
     desert ? 160 : 175,
   );
 
+  // Intensities rebalanced for ACES (higher key, softer hemi to avoid washout).
+  // Grass kept a touch darker than desert so turf doesn't wash out.
   const hemi = new THREE.HemisphereLight(
-    desert ? 0xffe8c8 : 0xe8f0f8,
-    desert ? 0x8a6540 : 0x3d5c38,
-    desert ? 0.85 : 0.78,
+    desert ? 0xffe8c8 : 0xd8e4f0,
+    desert ? 0x8a6540 : 0x2f4a2c,
+    desert ? 0.55 : 0.36,
   );
   scene.add(hemi);
 
   const sunLight = new THREE.DirectionalLight(
-    desert ? 0xffd89a : 0xffefd4,
-    desert ? 1.25 : 1.05,
+    desert ? 0xffd89a : 0xffe8c4,
+    desert ? 2.35 : 1.55,
   );
+  sunLight.castShadow = true;
   scene.add(sunLight);
   scene.add(sunLight.target);
 
   const fill = new THREE.DirectionalLight(
-    desert ? 0xc9956a : 0x7a9ab8,
-    desert ? 0.28 : 0.22,
+    desert ? 0xc9956a : 0x6a8aa8,
+    desert ? 0.42 : 0.26,
   );
   fill.position.set(-45, 28, -25);
+  fill.castShadow = false;
   scene.add(fill);
 
   const sky = new Sky();
   sky.scale.setScalar(900);
-  scene.add(sky);
   const uniforms = (sky.material as THREE.ShaderMaterial).uniforms;
   uniforms["turbidity"]!.value = desert ? 6.5 : 3.6;
   uniforms["rayleigh"]!.value = desert ? 0.85 : 1.35;
@@ -150,6 +172,33 @@ export function createAtmosphere(
 
   sunLight.position.copy(sunDir).multiplyScalar(80);
   sunLight.target.position.set(0, 0, 0);
+
+  // Fit orthographic shadow camera to the playable arena.
+  const half =
+    Math.max(opts.arenaW, opts.arenaD) * 0.55 + 10;
+  const shadowCam = sunLight.shadow.camera;
+  shadowCam.near = 10;
+  shadowCam.far = 220;
+  shadowCam.left = -half;
+  shadowCam.right = half;
+  shadowCam.top = half;
+  shadowCam.bottom = -half;
+  sunLight.shadow.bias = -0.00015;
+  sunLight.shadow.normalBias = 0.035;
+  sunLight.shadow.radius = 2.5;
+
+  // PMREM env from sky only (metals / roughness read under ACES).
+  let envRT: THREE.WebGLRenderTarget | null = null;
+  const pmrem = new THREE.PMREMGenerator(opts.renderer);
+  {
+    const envScene = new THREE.Scene();
+    envScene.add(sky);
+    envRT = pmrem.fromScene(envScene, 0.04);
+    scene.environment = envRT.texture;
+    scene.environmentIntensity = desert ? 0.85 : 0.68;
+    scene.add(sky);
+  }
+  pmrem.dispose();
 
   const sunDist = 420;
   const sunSprite = new THREE.Sprite(
@@ -254,6 +303,22 @@ export function createAtmosphere(
   cloudsC.renderOrder = -4;
   scene.add(cloudsC);
 
+  function applyQuality(quality: GraphicsQuality): void {
+    const mapSize = shadowMapSizeForQuality(quality);
+    const enabled = mapSize > 0;
+    sunLight.castShadow = enabled;
+    if (enabled) {
+      const prev = sunLight.shadow.mapSize.x;
+      sunLight.shadow.mapSize.set(mapSize, mapSize);
+      if (prev !== mapSize && sunLight.shadow.map) {
+        sunLight.shadow.map.dispose();
+        sunLight.shadow.map = null;
+      }
+      shadowCam.updateProjectionMatrix();
+    }
+  }
+  applyQuality(opts.quality);
+
   function update(dt: number, now: number): void {
     cloudsA.rotation.y += dt * (desert ? 0.006 : 0.008);
     cloudsB.rotation.y -= dt * (desert ? 0.009 : 0.012);
@@ -268,5 +333,13 @@ export function createAtmosphere(
       (desert ? 0.24 : 0.18) + Math.sin(now * 0.0005) * 0.03;
   }
 
-  return { update, sunLight };
+  function dispose(): void {
+    if (envRT) {
+      envRT.dispose();
+      envRT = null;
+    }
+    if (scene.environment) scene.environment = null;
+  }
+
+  return { update, sunLight, applyQuality, dispose };
 }

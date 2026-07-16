@@ -9,8 +9,9 @@ import {
   type MapDecoration,
   type MapTheme,
 } from "@fps/shared";
-import { createAtmosphere } from "./sky";
+import { createAtmosphere, type Atmosphere } from "./sky";
 import { placeWesternBorder } from "./westernBorder";
+import type { GraphicsQuality } from "./settings";
 
 const MODEL_BASE = "/models/";
 
@@ -29,8 +30,8 @@ async function loadModelLibrary(
         root.traverse((obj) => {
           const mesh = obj as THREE.Mesh;
           if (mesh.isMesh) {
-            mesh.castShadow = false;
-            mesh.receiveShadow = false;
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
             const mats = Array.isArray(mesh.material)
               ? mesh.material
               : [mesh.material];
@@ -38,6 +39,7 @@ async function loadModelLibrary(
               const std = m as THREE.MeshStandardMaterial;
               if (std.map) std.map.colorSpace = THREE.SRGBColorSpace;
               std.side = THREE.FrontSide;
+              if (std.envMapIntensity == null) std.envMapIntensity = 0.85;
             }
           }
         });
@@ -86,6 +88,8 @@ function placeDecoration(
   lib: Map<string, THREE.Object3D>,
   d: MapDecoration,
   theme: MapTheme = "grass",
+  /** Forest skirt trees skip casting — too many casters for the shadow map. */
+  castShadow = true,
 ): void {
   const template = lib.get(d.model);
   if (!template) return;
@@ -95,6 +99,15 @@ function placeDecoration(
   inst.rotation.y = d.yaw ?? 0;
   inst.position.set(d.x, d.y, d.z);
   if (theme === "desert") desertTintObject(inst);
+  if (!castShadow) {
+    inst.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (mesh.isMesh) {
+        mesh.castShadow = false;
+        mesh.receiveShadow = true;
+      }
+    });
+  }
   scene.add(inst);
 }
 
@@ -165,14 +178,20 @@ function placeForestBorder(
       const scale = 3.4 + forestRand(ix, iz, 6) * 3.2;
       const yaw = forestRand(ix, iz, 7) * Math.PI * 2;
 
-      placeDecoration(scene, lib, {
-        model,
-        x: px,
-        y: -0.05,
-        z: pz,
-        scale,
-        yaw,
-      });
+      placeDecoration(
+        scene,
+        lib,
+        {
+          model,
+          x: px,
+          y: -0.05,
+          z: pz,
+          scale,
+          yaw,
+        },
+        "grass",
+        false,
+      );
       placed += 1;
     }
   }
@@ -187,14 +206,20 @@ function placeForestBorder(
       const pz =
         side * (hd + belt + forestRand(iz, side, 9) * 3.5) +
         (forestRand(iz, side, 10) - 0.5) * 1.2;
-      placeDecoration(scene, lib, {
-        model: forestRand(iz, side, 11) > 0.45 ? "spruce.01" : "spruce.02",
-        x: px,
-        y: -0.05,
-        z: pz,
-        scale: 4.2 + forestRand(iz, side, 12) * 2.4,
-        yaw: forestRand(iz, side, 13) * Math.PI * 2,
-      });
+      placeDecoration(
+        scene,
+        lib,
+        {
+          model: forestRand(iz, side, 11) > 0.45 ? "spruce.01" : "spruce.02",
+          x: px,
+          y: -0.05,
+          z: pz,
+          scale: 4.2 + forestRand(iz, side, 12) * 2.4,
+          yaw: forestRand(iz, side, 13) * Math.PI * 2,
+        },
+        "grass",
+        false,
+      );
       placed += 1;
     }
   }
@@ -205,14 +230,20 @@ function placeForestBorder(
       const px =
         side * (hw + belt + forestRand(iz, side, 15) * 3.5) +
         (forestRand(iz, side, 16) - 0.5) * 1.2;
-      placeDecoration(scene, lib, {
-        model: forestRand(iz, side, 17) > 0.4 ? "tree.01" : "tree.03",
-        x: px,
-        y: -0.05,
-        z: pz,
-        scale: 4.0 + forestRand(iz, side, 18) * 2.6,
-        yaw: forestRand(iz, side, 19) * Math.PI * 2,
-      });
+      placeDecoration(
+        scene,
+        lib,
+        {
+          model: forestRand(iz, side, 17) > 0.4 ? "tree.01" : "tree.03",
+          x: px,
+          y: -0.05,
+          z: pz,
+          scale: 4.0 + forestRand(iz, side, 18) * 2.6,
+          yaw: forestRand(iz, side, 19) * Math.PI * 2,
+        },
+        "grass",
+        false,
+      );
       placed += 1;
     }
   }
@@ -458,13 +489,16 @@ function addBaseGround(
       map: turf.map,
       bumpMap: turf.bumpMap,
       bumpScale: desert ? 0.1 : 0.08,
-      color: desert ? 0xe8c896 : 0xb8d4a0,
-      roughness: desert ? 0.96 : 0.92,
+      color: desert ? 0xe8c896 : 0x9bbb82,
+      roughness: desert ? 0.96 : 0.94,
       metalness: 0.02,
+      envMapIntensity: desert ? 0.35 : 0.22,
     }),
   );
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = 0.0;
+  ground.receiveShadow = true;
+  ground.castShadow = false;
   scene.add(ground);
 
   let riverMat: THREE.MeshStandardMaterial | null = null;
@@ -491,6 +525,7 @@ function addBaseGround(
     );
     river.rotation.x = -Math.PI / 2;
     river.position.set(0, 0.025, 0);
+    river.receiveShadow = true;
     scene.add(river);
 
     const foam = new THREE.Mesh(
@@ -522,6 +557,7 @@ function addBaseGround(
     );
     wash.rotation.x = -Math.PI / 2;
     wash.position.set(2.5, 0.018, 0);
+    wash.receiveShadow = true;
     scene.add(wash);
 
     const bank = new THREE.Mesh(
@@ -560,6 +596,7 @@ function addBaseGround(
   );
   skirt.rotation.x = -Math.PI / 2;
   skirt.position.y = -0.05;
+  skirt.receiveShadow = true;
   scene.add(skirt);
 
   return {
@@ -583,6 +620,10 @@ function addBaseGround(
 export async function createWorld(
   scene: THREE.Scene,
   arenaUrl = ACTIVE_ARENA_URL,
+  gfx?: {
+    renderer: THREE.WebGLRenderer;
+    quality: GraphicsQuality;
+  },
 ) {
   try {
     const res = await fetch(arenaUrl);
@@ -610,7 +651,7 @@ export async function createWorld(
   const groundFx = addBaseGround(scene, arena.arenaW, arena.arenaD, theme);
 
   for (const d of arena.decorations) {
-    placeDecoration(scene, lib, d, theme);
+    placeDecoration(scene, lib, d, theme, true);
   }
 
   let borderFx: { update: (dt: number) => void };
@@ -631,6 +672,7 @@ export async function createWorld(
         roughness: 0.5,
         emissive: spawn.team === "T" ? 0x3a1808 : 0x0a2040,
         emissiveIntensity: 0.2,
+        envMapIntensity: 0.5,
       }),
     );
     pad.position.set(
@@ -638,14 +680,25 @@ export async function createWorld(
       spawn.position.y + 0.03,
       spawn.position.z,
     );
+    pad.receiveShadow = true;
     scene.add(pad);
   }
 
-  const atmosphere = createAtmosphere(scene, theme);
+  if (!gfx) {
+    throw new Error("[world] createWorld requires renderer + quality options");
+  }
+
+  const atmosphere: Atmosphere = createAtmosphere(scene, theme, {
+    renderer: gfx.renderer,
+    quality: gfx.quality,
+    arenaW: arena.arenaW,
+    arenaD: arena.arenaD,
+  });
 
   return {
     solids: arena.solids,
     spawns: arena.spawns,
+    atmosphere,
     updateSky(dt: number, now: number) {
       atmosphere.update(dt, now);
       groundFx.update(dt, now);

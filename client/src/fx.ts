@@ -15,6 +15,88 @@ import {
   useGlbViewmodels,
 } from "./viewmodels";
 
+/**
+ * Per-WeaponShape first-person shot animation magnitudes (CHANGE 3).
+ * Tunable in one place — values are kick meters / recover rates / FOV degrees.
+ */
+const SHOT_FAM = {
+  pistol: {
+    kick: 0.034,
+    recover: 16,
+    fov: 1.1,
+    yaw: 0.018,
+    slide: 1,
+    slideRecover: 11,
+  },
+  smg: {
+    kick: 0.016,
+    recover: 7,
+    fov: 0.55,
+    rattleAmp: 0.01,
+    rattleHz: 62,
+  },
+  shotgun: {
+    kick: 0.058,
+    recover: 3.0,
+    fov: 2.35,
+    pumpRecover: 2.8,
+  },
+  sniper: {
+    kick: 0.068,
+    recover: 2.6,
+    fov: 3.4,
+    boltRecover: 2.4,
+  },
+  rifle: {
+    kick: 0.038,
+    recover: 8.5,
+    fov: 1.35,
+  },
+  melee: {
+    swingSpeed: 4.6,
+    kick: 0.042,
+    fov: 1.5,
+  },
+  cannon: {
+    kick: 0.072,
+    recover: 2.4,
+    fov: 2.9,
+    squash: 0.2,
+    squashRecover: 5.5,
+  },
+  weird: {
+    kick: 0.064,
+    recover: 3.1,
+    fov: 2.5,
+    squash: 0.26,
+    squashRecover: 6.0,
+  },
+} as const;
+
+type ShotFamily = keyof typeof SHOT_FAM;
+
+function shotFamilyFromShape(shape: WeaponShape): ShotFamily {
+  if (shape in SHOT_FAM) return shape as ShotFamily;
+  return "rifle";
+}
+
+/** Weapon-draw rise duration (seconds). */
+const DRAW_SEC = 0.25;
+/** Mag drop pool for reload FX. */
+const MAG_POOL_SIZE = 8;
+const MAG_GRAVITY = 18;
+const RELOAD_SLAM_KICK = 0.022;
+const RELOAD_SLAM_FOV = 0.55;
+
+/** Persistent world bullet holes (CHANGE 5). */
+const DECAL_CAP = 60;
+const DECAL_SIZE = 0.14;
+/** Muzzle smoke after this many shots in a rapid streak. */
+const SMOKE_STREAK_NEED = 4;
+const SMOKE_STREAK_GAP_MS = 220;
+const SMOKE_POOL_SIZE = 12;
+const SHELL_POOL_SIZE = 24;
+
 type Tracer = {
   obj: THREE.Object3D;
   dispose: () => void;
@@ -513,6 +595,10 @@ function buildViewmodel(weapon: WeaponDef): THREE.Group {
 export function createEffects(
   scene: THREE.Scene,
   camera: THREE.PerspectiveCamera,
+  hooks?: {
+    onExplosion?: (at: { x: number; y: number; z: number }) => void;
+    onMuzzleFlash?: () => void;
+  },
 ) {
   const tracers: Tracer[] = [];
   const impacts: Impact[] = [];
@@ -598,11 +684,18 @@ export function createEffects(
   let swingT = 0;
   let pumpT = 0;
   let boltT = 0;
+  let slideT = 0;
+  let squashT = 0;
+  let smgRattle = 0;
   let shotAnimProfile: WeaponAnimProfile = "kick";
+  let shotFamily: ShotFamily = "rifle";
   /** 0..1 reload progress while reloading. */
   let reloadBlend = 0;
   let wasReloadingFx = false;
   let reloadPhase = 0;
+  let magDropped = false;
+  let slamDone = false;
+  let drawT = 0;
   /** Camera head-bob offsets applied by caller after positioning eye. */
   let headBobY = 0;
   let headBobRoll = 0;
@@ -611,9 +704,300 @@ export function createEffects(
   const _origin = new THREE.Vector3();
   const _end = new THREE.Vector3();
   const _fwd = new THREE.Vector3();
-
+  const _magRight = new THREE.Vector3();
+  const _magUp = new THREE.Vector3();
+  const _decalN = new THREE.Vector3();
+  const _decalUp = new THREE.Vector3(0, 1, 0);
+  const _shellRight = new THREE.Vector3();
+  const _shellUp = new THREE.Vector3();
   const hipMuzzle = new THREE.Vector3(0.22, -0.16, -1.05);
   const adsMuzzle = new THREE.Vector3(0.02, -0.08, -0.7);
+
+  type MagDrop = {
+    mesh: THREE.Mesh;
+    vel: THREE.Vector3;
+    active: boolean;
+    born: number;
+    life: number;
+  };
+  const magPool: MagDrop[] = [];
+  {
+    const magGeo = new THREE.BoxGeometry(0.04, 0.09, 0.055);
+    for (let i = 0; i < MAG_POOL_SIZE; i++) {
+      const mesh = new THREE.Mesh(
+        magGeo,
+        new THREE.MeshStandardMaterial({
+          color: 0x2a2a2e,
+          roughness: 0.55,
+          metalness: 0.35,
+        }),
+      );
+      mesh.visible = false;
+      mesh.castShadow = false;
+      scene.add(mesh);
+      magPool.push({
+        mesh,
+        vel: new THREE.Vector3(),
+        active: false,
+        born: 0,
+        life: 0.9,
+      });
+    }
+  }
+
+  function cancelReloadFx(): void {
+    reloadBlend = 0;
+    reloadPhase = 0;
+    wasReloadingFx = false;
+    magDropped = false;
+    slamDone = false;
+  }
+
+  function spawnMagDrop(now: number): void {
+    let slot: MagDrop | null = null;
+    for (const m of magPool) {
+      if (!m.active) {
+        slot = m;
+        break;
+      }
+    }
+    if (!slot) {
+      slot = magPool[0]!;
+    }
+    camera.updateMatrixWorld();
+    _muzzleLocal.lerpVectors(hipMuzzle, adsMuzzle, adsBlend);
+    _origin.copy(_muzzleLocal).applyMatrix4(camera.matrixWorld);
+    _magRight.set(1, 0, 0).transformDirection(camera.matrixWorld);
+    _magUp.set(0, 1, 0).transformDirection(camera.matrixWorld);
+    slot.mesh.position
+      .copy(_origin)
+      .addScaledVector(_magRight, 0.08)
+      .addScaledVector(_magUp, -0.06);
+    slot.vel
+      .copy(_magRight)
+      .multiplyScalar(0.6 + Math.random() * 0.5)
+      .addScaledVector(_magUp, -0.4)
+      .addScaledVector(
+        _fwd.set(0, 0, -1).transformDirection(camera.matrixWorld),
+        -0.3,
+      );
+    slot.active = true;
+    slot.born = now;
+    slot.life = 0.85;
+    slot.mesh.visible = true;
+    slot.mesh.rotation.set(
+      Math.random() * 1.2,
+      Math.random() * 2,
+      Math.random() * 1.2,
+    );
+  }
+
+  function tickMagDrops(now: number, dt: number): void {
+    for (const m of magPool) {
+      if (!m.active) continue;
+      const age = (now - m.born) / 1000;
+      if (age >= m.life || m.mesh.position.y < -0.5) {
+        m.active = false;
+        m.mesh.visible = false;
+        continue;
+      }
+      m.vel.y -= MAG_GRAVITY * dt;
+      m.mesh.position.x += m.vel.x * dt;
+      m.mesh.position.y += m.vel.y * dt;
+      m.mesh.position.z += m.vel.z * dt;
+      m.mesh.rotation.x += dt * 4;
+      m.mesh.rotation.z += dt * 3;
+      if (m.mesh.position.y < 0.05 && m.vel.y < 0) {
+        m.mesh.position.y = 0.05;
+        m.vel.y *= -0.25;
+        m.vel.x *= 0.6;
+        m.vel.z *= 0.6;
+      }
+      const mat = m.mesh.material as THREE.MeshStandardMaterial;
+      mat.opacity = Math.max(0, 1 - age / m.life);
+      mat.transparent = true;
+    }
+  }
+
+  // ——— Bullet-hole decals (pooled) ———
+  type DecalSlot = { mesh: THREE.Mesh; born: number; used: boolean };
+  const decalPool: DecalSlot[] = [];
+  let decalCursor = 0;
+  {
+    const geo = new THREE.PlaneGeometry(DECAL_SIZE, DECAL_SIZE);
+    for (let i = 0; i < DECAL_CAP; i++) {
+      const mesh = new THREE.Mesh(
+        geo,
+        new THREE.MeshBasicMaterial({
+          color: 0x1a120c,
+          transparent: true,
+          opacity: 0.72,
+          depthWrite: false,
+          polygonOffset: true,
+          polygonOffsetFactor: -2,
+          side: THREE.DoubleSide,
+        }),
+      );
+      mesh.visible = false;
+      mesh.renderOrder = 2;
+      scene.add(mesh);
+      decalPool.push({ mesh, born: 0, used: false });
+    }
+  }
+
+  function placeDecal(at: Vec3, shotDirX: number, shotDirY: number, shotDirZ: number, now: number): void {
+    const slot = decalPool[decalCursor]!;
+    decalCursor = (decalCursor + 1) % DECAL_CAP;
+    _decalN.set(-shotDirX, -shotDirY, -shotDirZ);
+    if (_decalN.lengthSq() < 1e-6) _decalN.set(0, 1, 0);
+    else _decalN.normalize();
+    // Bias toward upward so floors get readable holes when grazing
+    if (Math.abs(_decalN.y) < 0.25) _decalN.y += 0.4;
+    _decalN.normalize();
+    slot.mesh.quaternion.setFromUnitVectors(_decalUp, _decalN);
+    slot.mesh.position.set(
+      at.x + _decalN.x * 0.015,
+      at.y + _decalN.y * 0.015,
+      at.z + _decalN.z * 0.015,
+    );
+    slot.mesh.visible = true;
+    slot.used = true;
+    slot.born = now;
+    const mat = slot.mesh.material as THREE.MeshBasicMaterial;
+    mat.opacity = 0.75;
+  }
+
+  // ——— Muzzle smoke ———
+  type SmokeSlot = {
+    spr: THREE.Sprite;
+    active: boolean;
+    born: number;
+    life: number;
+    vel: THREE.Vector3;
+  };
+  const smokePool: SmokeSlot[] = [];
+  let burstStreak = 0;
+  let lastBurstShotAt = 0;
+  {
+    const c = document.createElement("canvas");
+    c.width = 32;
+    c.height = 32;
+    const ctx = c.getContext("2d")!;
+    const g = ctx.createRadialGradient(16, 16, 2, 16, 16, 15);
+    g.addColorStop(0, "rgba(200,200,200,0.55)");
+    g.addColorStop(1, "rgba(160,160,160,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 32, 32);
+    const tex = new THREE.CanvasTexture(c);
+    for (let i = 0; i < SMOKE_POOL_SIZE; i++) {
+      const mat = new THREE.SpriteMaterial({
+        map: tex,
+        transparent: true,
+        depthWrite: false,
+        opacity: 0.35,
+      });
+      const spr = new THREE.Sprite(mat);
+      spr.visible = false;
+      spr.scale.set(0.2, 0.2, 1);
+      scene.add(spr);
+      smokePool.push({
+        spr,
+        active: false,
+        born: 0,
+        life: 0.55,
+        vel: new THREE.Vector3(),
+      });
+    }
+  }
+
+  function spawnMuzzleSmoke(now: number): void {
+    let slot: SmokeSlot | null = null;
+    for (const s of smokePool) {
+      if (!s.active) {
+        slot = s;
+        break;
+      }
+    }
+    if (!slot) slot = smokePool[0]!;
+    camera.updateMatrixWorld();
+    _muzzleLocal.lerpVectors(hipMuzzle, adsMuzzle, adsBlend);
+    _origin.copy(_muzzleLocal).applyMatrix4(camera.matrixWorld);
+    _fwd.set(0, 0, -1).transformDirection(camera.matrixWorld);
+    slot.spr.position.copy(_origin).addScaledVector(_fwd, 0.12);
+    slot.vel.copy(_fwd).multiplyScalar(0.35);
+    slot.vel.y += 0.45;
+    slot.active = true;
+    slot.born = now;
+    slot.life = 0.5 + Math.random() * 0.25;
+    slot.spr.visible = true;
+    slot.spr.scale.setScalar(0.18);
+    (slot.spr.material as THREE.SpriteMaterial).opacity = 0.4;
+  }
+
+  function tickSmoke(now: number, dt: number): void {
+    for (const s of smokePool) {
+      if (!s.active) continue;
+      const age = (now - s.born) / 1000;
+      if (age >= s.life) {
+        s.active = false;
+        s.spr.visible = false;
+        continue;
+      }
+      s.spr.position.x += s.vel.x * dt;
+      s.spr.position.y += s.vel.y * dt;
+      s.spr.position.z += s.vel.z * dt;
+      s.vel.y += 0.4 * dt;
+      const t = age / s.life;
+      s.spr.scale.setScalar(0.18 + t * 0.55);
+      (s.spr.material as THREE.SpriteMaterial).opacity = 0.4 * (1 - t);
+    }
+  }
+
+  // ——— Shell casings (pooled, per-family) ———
+  type ShellSlot = {
+    mesh: THREE.Mesh;
+    vel: THREE.Vector3;
+    active: boolean;
+    born: number;
+    life: number;
+  };
+  const shellPool: ShellSlot[] = [];
+  {
+    const geo = new THREE.CylinderGeometry(0.012, 0.012, 0.04, 5);
+    for (let i = 0; i < SHELL_POOL_SIZE; i++) {
+      const mesh = new THREE.Mesh(
+        geo,
+        new THREE.MeshBasicMaterial({ color: 0xe8c76a }),
+      );
+      mesh.visible = false;
+      scene.add(mesh);
+      shellPool.push({
+        mesh,
+        vel: new THREE.Vector3(),
+        active: false,
+        born: 0,
+        life: 0.4,
+      });
+    }
+  }
+
+  function shouldEjectShell(weapon?: WeaponDef | null): boolean {
+    if (!weapon) return false;
+    if (!weapon.shellEject) return false;
+    const shape = defaultWeaponFx(weapon).shape;
+    if (shape === "melee") return false;
+    if (weapon.id.startsWith("gg_")) return false;
+    // Energy / beam-ish
+    if (
+      weapon.id === "gg_pointer" ||
+      weapon.id === "gg_shrink" ||
+      weapon.id === "gg_thunder" ||
+      weapon.id === "gg_bubble"
+    ) {
+      return false;
+    }
+    return true;
+  }
 
   let weaponLoadToken = 0;
 
@@ -630,6 +1014,8 @@ export function createEffects(
     flashMat.color.setHex(style.muzzle);
     muzzleLight.color.setHex(style.muzzle);
     swingT = 0;
+    cancelReloadFx();
+    drawT = 1;
 
     // Instant procedural fallback, then upgrade to GLB when ready.
     const token = ++weaponLoadToken;
@@ -954,6 +1340,7 @@ export function createEffects(
     now: number,
     hitPlayer: boolean,
     fxStyle: WeaponFx,
+    shotDir?: { x: number; y: number; z: number },
   ): void {
     const scale = fxStyle.impactScale;
     const mesh = new THREE.Mesh(
@@ -967,6 +1354,10 @@ export function createEffects(
     mesh.position.set(at.x, at.y, at.z);
     scene.add(mesh);
     impacts.push({ mesh, born: now, life: hitPlayer ? 0.16 : 0.1 });
+
+    if (!hitPlayer && shotDir) {
+      placeDecal(at, shotDir.x, shotDir.y, shotDir.z, now);
+    }
 
     const n = Math.round((hitPlayer ? 7 : 4) * scale);
     for (let i = 0; i < n; i++) {
@@ -1026,6 +1417,8 @@ export function createEffects(
     ring.position.set(at.x, at.y, at.z);
     scene.add(ring);
     impacts.push({ mesh: ring, born: now, life: 0.42 });
+
+    hooks?.onExplosion?.(at);
 
     const n = 18;
     for (let i = 0; i < n; i++) {
@@ -1168,28 +1561,74 @@ export function createEffects(
     });
   }
 
-  function ejectShell(now: number): void {
+  function ejectShell(now: number, weapon?: WeaponDef | null): void {
+    if (!shouldEjectShell(weapon)) return;
+    const shape = weapon ? defaultWeaponFx(weapon).shape : "rifle";
+    let slot: ShellSlot | null = null;
+    for (const s of shellPool) {
+      if (!s.active) {
+        slot = s;
+        break;
+      }
+    }
+    if (!slot) slot = shellPool[0]!;
+
     camera.updateMatrixWorld();
     _muzzleLocal.lerpVectors(hipMuzzle, adsMuzzle, adsBlend);
     _origin.copy(_muzzleLocal).applyMatrix4(camera.matrixWorld);
-    const right = new THREE.Vector3(1, 0, 0).transformDirection(camera.matrixWorld);
-    const up = new THREE.Vector3(0, 1, 0).transformDirection(camera.matrixWorld);
-    const mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.012, 0.012, 0.04, 5),
-      new THREE.MeshBasicMaterial({ color: 0xe8c76a }),
-    );
-    mesh.position.copy(_origin).addScaledVector(right, 0.08).addScaledVector(up, 0.02);
-    scene.add(mesh);
-    sparks.push({
-      mesh,
-      vel: right
-        .clone()
-        .multiplyScalar(2.2 + Math.random())
-        .addScaledVector(up, 1.6 + Math.random())
-        .addScaledVector(_fwd.set(0, 0, -1).transformDirection(camera.matrixWorld), -0.4),
-      born: now,
-      life: 0.35,
-    });
+    _shellRight.set(1, 0, 0).transformDirection(camera.matrixWorld);
+    _shellUp.set(0, 1, 0).transformDirection(camera.matrixWorld);
+    _fwd.set(0, 0, -1).transformDirection(camera.matrixWorld);
+
+    const mat = slot.mesh.material as THREE.MeshBasicMaterial;
+    let sx = 1;
+    let sy = 1;
+    let sz = 1;
+    if (shape === "shotgun") {
+      mat.color.setHex(0xc62828);
+      sx = 1.35;
+      sy = 1.6;
+      sz = 1.35;
+    } else if (shape === "sniper") {
+      mat.color.setHex(0xd4a84b);
+      sx = 1.25;
+      sy = 2.1;
+      sz = 1.25;
+    } else {
+      mat.color.setHex(0xe8c76a);
+    }
+    slot.mesh.scale.set(sx, sy, sz);
+    slot.mesh.position
+      .copy(_origin)
+      .addScaledVector(_shellRight, 0.08)
+      .addScaledVector(_shellUp, 0.02);
+    slot.vel
+      .copy(_shellRight)
+      .multiplyScalar(2.2 + Math.random())
+      .addScaledVector(_shellUp, 1.6 + Math.random())
+      .addScaledVector(_fwd, -0.4);
+    slot.active = true;
+    slot.born = now;
+    slot.life = shape === "sniper" ? 0.55 : 0.38;
+    slot.mesh.visible = true;
+  }
+
+  function tickShells(now: number, dt: number): void {
+    for (const s of shellPool) {
+      if (!s.active) continue;
+      const age = (now - s.born) / 1000;
+      if (age >= s.life) {
+        s.active = false;
+        s.mesh.visible = false;
+        continue;
+      }
+      s.vel.y -= 14 * dt;
+      s.mesh.position.x += s.vel.x * dt;
+      s.mesh.position.y += s.vel.y * dt;
+      s.mesh.position.z += s.vel.z * dt;
+      s.mesh.rotation.x += dt * 10;
+      s.mesh.rotation.z += dt * 7;
+    }
   }
 
   function localShot(
@@ -1252,6 +1691,11 @@ export function createEffects(
           now,
           false,
           fxStyle,
+          {
+            x: _end.x - _origin.x,
+            y: _end.y - _origin.y,
+            z: _end.z - _origin.z,
+          },
         );
       }
     }
@@ -1259,48 +1703,55 @@ export function createEffects(
     if (secondary) return;
 
     shotAnimProfile = weapon ? resolveAnimProfile(weapon) : "kick";
+    shotFamily = shotFamilyFromShape(fxStyle.shape);
+    const fam = SHOT_FAM[shotFamily];
+    const adsSoft = 1 - adsBlend * 0.4;
+
     kickYaw =
       Math.min(weapon?.vmKickYaw ?? 0, 0.7) *
-      0.025 *
+      (("yaw" in fam ? fam.yaw : 0.012) as number) *
       (Math.random() > 0.5 ? 1 : -1);
     kickRoll = Math.min(weapon?.vmKickRoll ?? 0, 0.8) * 0.03;
 
-    if (isMelee) {
+    if (shotFamily === "melee" || isMelee) {
       swingT = 1;
-      kick = Math.min(0.055, 0.04 * Math.min(fxStyle.kickScale, 1.5));
-      fovKick = Math.min(2.0, 1.4 * Math.min(fxStyle.fovKickScale, 1.4));
+      kick = Math.min(0.06, SHOT_FAM.melee.kick * Math.min(fxStyle.kickScale, 1.5));
+      fovKick = Math.min(2.4, SHOT_FAM.melee.fov * Math.min(fxStyle.fovKickScale, 1.4));
       muzzleFlash.visible = false;
       muzzleLight.intensity = 0;
       return;
     }
 
-    if (shotAnimProfile === "pump") pumpT = 1;
-    if (shotAnimProfile === "bolt") boltT = 1;
+    if (shotFamily === "shotgun") pumpT = 1;
+    if (shotFamily === "sniper") boltT = 1;
+    if (shotFamily === "pistol" && "slide" in fam) slideT = fam.slide;
+    if (shotFamily === "cannon" || shotFamily === "weird") {
+      squashT = "squash" in fam ? fam.squash : 0.2;
+      swingT = 1;
+    }
+    if (shotFamily === "smg") smgRattle = 1;
     if (shotAnimProfile === "spin" || shotAnimProfile === "toss") swingT = 1;
-    if (weapon?.shellEject) ejectShell(now);
+    ejectShell(now, weapon);
+    if (now - lastBurstShotAt < SMOKE_STREAK_GAP_MS) burstStreak += 1;
+    else burstStreak = 1;
+    lastBurstShotAt = now;
+    if (burstStreak >= SMOKE_STREAK_NEED) spawnMuzzleSmoke(now);
 
     muzzleUntil = now + 55 + fxStyle.flashScale * 20;
-    const kickMul =
-      shotAnimProfile === "punch" || shotAnimProfile === "toss"
-        ? 1.1
-        : shotAnimProfile === "spray"
-          ? 0.7
-          : 1;
-    // Soft recoil — never let high kickScale send the gun out of frame
-    const kScale = Math.min(fxStyle.kickScale, 1.5);
-    kick = Math.min(
-      0.048,
-      0.028 * kScale * kickMul * (1 - adsBlend * 0.4),
-    );
+    const kScale = Math.min(fxStyle.kickScale, 1.55);
+    const baseKick = "kick" in fam ? fam.kick : SHOT_FAM.rifle.kick;
+    kick = Math.min(0.078, baseKick * kScale * adsSoft);
+    const baseFov = "fov" in fam ? fam.fov : SHOT_FAM.rifle.fov;
     fovKick = Math.min(
-      2.0,
-      1.0 * Math.min(fxStyle.fovKickScale, 1.6) * (1 - adsBlend * 0.5),
+      3.6,
+      baseFov * Math.min(fxStyle.fovKickScale, 1.7) * (1 - adsBlend * 0.5),
     );
     muzzleFlash.visible = adsBlend < 0.85;
     muzzleFlash.material.rotation = Math.random() * Math.PI;
     flashMat.color.setHex(fxStyle.muzzle);
     muzzleLight.color.setHex(fxStyle.muzzle);
     spinT += 0.45 * kScale;
+    hooks?.onMuzzleFlash?.();
   }
 
   function remoteShot(
@@ -1341,7 +1792,11 @@ export function createEffects(
     if (blast != null && blast > 0) {
       spawnExplosion(end, now, blast, fxStyle);
     } else {
-      spawnImpact(end, now, hitPlayer, fxStyle);
+      spawnImpact(end, now, hitPlayer, fxStyle, {
+        x: end.x - origin.x,
+        y: end.y - origin.y,
+        z: end.z - origin.z,
+      });
     }
   }
 
@@ -1368,23 +1823,54 @@ export function createEffects(
       ((opts.sprint && !opts.ads ? 1 : 0) - sprintBlend) * Math.min(1, dt * 5);
 
     const reloading = !!(opts.reloading && alive);
+    const reloadShape = style.shape;
+    const noMagReload =
+      reloadShape === "melee" || reloadShape === "shotgun";
     if (reloading && !wasReloadingFx) {
       reloadPhase = 0;
       reloadBlend = 0;
+      magDropped = false;
+      slamDone = false;
     }
     wasReloadingFx = reloading;
-    if (reloading) {
+    if (reloading && reloadShape !== "melee") {
       const dur = Math.max(0.25, (opts.reloadMs ?? 2000) / 1000);
       reloadPhase = Math.min(1, reloadPhase + dt / dur);
-      // Smooth envelope: dive → work → recover
-      const p = reloadPhase;
-      const dive = p < 0.22 ? p / 0.22 : 1;
-      const recover = p > 0.72 ? 1 - (p - 0.72) / 0.28 : 1;
-      reloadBlend = Math.min(dive, recover);
+      if (reloadShape === "shotgun") {
+        // Shell-by-shell tilt loop
+        const shells = 1 + Math.sin(reloadPhase * Math.PI * 5);
+        reloadBlend = 0.35 + 0.45 * Math.max(0, shells);
+      } else {
+        const p = reloadPhase;
+        const dive = p < 0.22 ? p / 0.22 : 1;
+        const recover = p > 0.72 ? 1 - (p - 0.72) / 0.28 : 1;
+        reloadBlend = Math.min(dive, recover);
+        if (!noMagReload && p > 0.28 && !magDropped) {
+          spawnMagDrop(now);
+          magDropped = true;
+        }
+        if (p > 0.72 && !slamDone) {
+          kick = Math.max(kick, RELOAD_SLAM_KICK);
+          fovKick = Math.max(fovKick, RELOAD_SLAM_FOV);
+          slamDone = true;
+        }
+      }
     } else {
       reloadBlend = Math.max(0, reloadBlend - dt * 6);
       if (reloadBlend < 0.01) reloadBlend = 0;
+      if (!reloading) {
+        magDropped = false;
+        slamDone = false;
+      }
     }
+
+    if (drawT > 0) {
+      drawT = Math.max(0, drawT - dt / DRAW_SEC);
+    }
+
+    tickMagDrops(now, dt);
+    tickSmoke(now, dt);
+    tickShells(now, dt);
 
     const spd = Math.max(0, opts.moveSpeed ?? 0);
     const grounded = opts.grounded !== false;
@@ -1405,13 +1891,36 @@ export function createEffects(
     headBobY = Math.abs(Math.sin(bobTime * 2)) * headAmp;
     headBobRoll = Math.sin(bobTime) * headAmp * 0.55;
 
-    kick = Math.max(0, kick - dt * 0.5);
+    const fam = SHOT_FAM[shotFamily];
+    const kickRecover = "recover" in fam ? fam.recover : 8;
+    kick = Math.max(0, kick - dt * kick * kickRecover * 0.35 - dt * 0.02);
     kickYaw *= Math.max(0, 1 - dt * 9);
     kickRoll *= Math.max(0, 1 - dt * 8);
-    fovKick = Math.max(0, fovKick - dt * 8);
+    fovKick = Math.max(0, fovKick - dt * Math.max(6, kickRecover * 0.9));
     spinT *= Math.max(0, 1 - dt * 4.5);
-    if (pumpT > 0) pumpT = Math.max(0, pumpT - dt * 3.5);
-    if (boltT > 0) boltT = Math.max(0, boltT - dt * 3);
+    if (pumpT > 0) {
+      const pr = shotFamily === "shotgun" ? SHOT_FAM.shotgun.pumpRecover : 3.5;
+      pumpT = Math.max(0, pumpT - dt * pr);
+    }
+    if (boltT > 0) {
+      const br = shotFamily === "sniper" ? SHOT_FAM.sniper.boltRecover : 3;
+      boltT = Math.max(0, boltT - dt * br);
+    }
+    if (slideT > 0) {
+      slideT = Math.max(0, slideT - dt * SHOT_FAM.pistol.slideRecover);
+    }
+    if (squashT > 0) {
+      const sr =
+        shotFamily === "weird"
+          ? SHOT_FAM.weird.squashRecover
+          : SHOT_FAM.cannon.squashRecover;
+      squashT = Math.max(0, squashT - dt * sr * squashT);
+    }
+    if (shotFamily === "smg" && kick > 0.004) {
+      smgRattle = Math.min(1, smgRattle + dt * 8);
+    } else {
+      smgRattle = Math.max(0, smgRattle - dt * 6);
+    }
 
     // Reload pose: pull gun down/in, tilt + mag-swap roll
     const rb = reloadBlend;
@@ -1426,14 +1935,24 @@ export function createEffects(
 
     if (swingT > 0) {
       const swingSpeed =
-        shotAnimProfile === "slam" ? 3.2 : shotAnimProfile === "spin" ? 5.5 : 4.2;
+        shotFamily === "melee"
+          ? SHOT_FAM.melee.swingSpeed
+          : shotAnimProfile === "slam"
+            ? 3.2
+            : shotAnimProfile === "spin"
+              ? 5.5
+              : shotFamily === "cannon" || shotFamily === "weird"
+                ? 3.6
+                : 4.2;
       swingT = Math.max(0, swingT - dt * swingSpeed);
     }
     const st = swingT;
     const swingArc = Math.sin((1 - st) * Math.PI);
     const swingProgress = 1 - st;
     const isMeleeVm =
-      !!viewmodel.userData.melee || style.shape === "melee";
+      !!viewmodel.userData.melee ||
+      style.shape === "melee" ||
+      shotFamily === "melee";
     const profile = shotAnimProfile;
     let swingX = 0;
     let swingY = 0;
@@ -1443,29 +1962,20 @@ export function createEffects(
     let swingRz = 0;
     const memeVm = !!viewmodel.userData.meme;
     if (st > 0) {
-      if (isMeleeVm && profile === "slash") {
-        swingZ = -swingArc * 0.32;
-        swingY = swingArc * 0.08;
-        swingX = swingArc * 0.07;
-        swingRx = -0.15 - swingArc * 0.55;
-        swingRy = -0.2 + swingProgress * 0.55;
-        swingRz = swingArc * 0.35;
-      } else if (isMeleeVm && profile === "slam") {
-        swingX = -0.06 + swingProgress * 0.22;
-        swingY = 0.12 - swingArc * 0.22;
-        swingZ = -swingArc * 0.1;
-        swingRx = -0.55 + swingProgress * 1.0;
-        swingRz = -0.28 + swingProgress * 0.6;
-        swingRy = swingArc * 0.1;
-      } else if (isMeleeVm) {
-        swingX = -0.08 + swingProgress * 0.28;
-        swingY = 0.1 - swingArc * 0.18;
-        swingZ = -swingArc * 0.12;
-        swingRx = -0.45 + swingProgress * 0.85;
-        swingRz = -0.4 + swingProgress * 0.85;
-        swingRy = swingArc * 0.18;
+      if (isMeleeVm) {
+        // Rotational slash arc through a forward path
+        swingZ = -swingArc * 0.34;
+        swingY = swingArc * 0.09;
+        swingX = swingArc * 0.08;
+        swingRx = -0.2 - swingArc * 0.65;
+        swingRy = -0.35 + swingProgress * 0.85;
+        swingRz = swingArc * 0.42;
+      } else if (shotFamily === "cannon" || shotFamily === "weird") {
+        swingZ = swingArc * 0.06;
+        swingY = -swingArc * 0.04;
+        swingRx = -swingArc * 0.35;
+        swingRz = swingArc * 0.1 * (profile === "toss" ? -1 : 1);
       } else if (profile === "spin") {
-        // Slight twist only — spinning the whole VM looks like it flew away
         swingRy = swingArc * 0.35;
         swingRz = swingArc * 0.12;
       } else if (profile === "toss") {
@@ -1481,11 +1991,14 @@ export function createEffects(
       | undefined;
     if (parts?.pump) {
       if (parts.pump.userData.baseZ == null) parts.pump.userData.baseZ = parts.pump.position.z;
-      parts.pump.position.z = parts.pump.userData.baseZ - pumpT * 0.1;
+      parts.pump.position.z = parts.pump.userData.baseZ - pumpT * 0.14;
     }
     if (parts?.bolt) {
       if (parts.bolt.userData.baseZ == null) parts.bolt.userData.baseZ = parts.bolt.position.z;
-      parts.bolt.position.z = parts.bolt.userData.baseZ + boltT * 0.1;
+      // Sniper bolt cycle during fire cooldown
+      const boltCycle = Math.sin(boltT * Math.PI);
+      parts.bolt.position.z = parts.bolt.userData.baseZ + boltCycle * 0.14;
+      parts.bolt.rotation.z = boltCycle * 0.55;
     }
     if (parts?.bellows) {
       parts.bellows.scale.z = 1 + pumpT * 0.4 + Math.sin(now * 0.008) * 0.04;
@@ -1519,23 +2032,50 @@ export function createEffects(
     }
 
     const sprayJitter =
-      profile === "spray" && kick > 0.01
-        ? Math.sin(now * 0.08) * kick * 1.4
-        : 0;
+      shotFamily === "smg" && smgRattle > 0.01
+        ? Math.sin(now * 0.001 * SHOT_FAM.smg.rattleHz) *
+          SHOT_FAM.smg.rattleAmp *
+          smgRattle
+        : profile === "spray" && kick > 0.01
+          ? Math.sin(now * 0.08) * kick * 1.4
+          : 0;
+    const slideKick = shotFamily === "pistol" ? slideT * 0.028 : 0;
 
     const rest = (viewmodel.userData.rest as
       | { x: number; y: number; z: number; rx: number; ry: number; rz: number }
       | undefined) ?? { x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0 };
     const breathe = memeVm ? Math.sin(now * 0.004) * 0.005 : 0;
 
+    // Squash-stretch for cannon / weird
+    if (squashT > 0.001) {
+      const sx = 1 + squashT * 0.55;
+      const sy = 1 - squashT * 0.35;
+      const sz = 1 + squashT * 0.25;
+      viewmodel.scale.set(sx, sy, sz);
+    } else if (
+      viewmodel.scale.x !== 1 ||
+      viewmodel.scale.y !== 1 ||
+      viewmodel.scale.z !== 1
+    ) {
+      viewmodel.scale.set(1, 1, 1);
+    }
+
     // On ADS: center iron sights for real guns; drop meme guns out of FOV fast
     const adsX = THREE.MathUtils.lerp(0.22, memeVm ? 0.35 : 0.0, adsBlend) - 0.22;
     const adsY = THREE.MathUtils.lerp(0, memeVm ? -0.45 : 0.08, adsBlend);
     const adsZ = THREE.MathUtils.lerp(0, memeVm ? 0.55 : 0.28, adsBlend);
     viewmodel.position.set(
-      rest.x + bobX + adsX + magWiggle * 0.04 + swingX + kickYaw + sprayJitter * 0.006 + breathe,
-      rest.y - kick + bobY + adsY - rb * 0.14 - rack * 0.05 + swingY,
-      rest.z + kick * 0.28 + adsZ + rb * 0.1 + swingZ + pumpT * 0.03 + boltT * 0.04,
+      rest.x + bobX + adsX + magWiggle * 0.04 + swingX + kickYaw + sprayJitter + breathe,
+      rest.y -
+        kick -
+        slideKick +
+        bobY +
+        adsY -
+        rb * 0.14 -
+        rack * 0.05 +
+        swingY -
+        drawT * drawT * 0.48,
+      rest.z + kick * 0.28 + adsZ + rb * 0.1 + swingZ + pumpT * 0.04 + boltT * 0.05 + slideT * 0.02,
     );
     viewmodel.rotation.x =
       rest.rx -
@@ -1544,7 +2084,8 @@ export function createEffects(
       rb * 0.55 -
       rack +
       swingRx -
-      boltT * 0.1;
+      boltT * 0.1 +
+      drawT * drawT * 0.55;
     viewmodel.rotation.y =
       rest.ry - adsBlend * 0.04 + spinT * 0.03 + magWiggle * 0.35 + swingRy + kickYaw * 2.5;
     viewmodel.rotation.z =

@@ -1,4 +1,10 @@
-import { loadSettings, saveSettings, type GameSettings } from "./settings";
+import { loadSettings, saveSettings, type GameSettings, type GraphicsQuality } from "./settings";
+
+function qualityLabel(q: GraphicsQuality): string {
+  if (q === "low") return "Low";
+  if (q === "high") return "High";
+  return "Medium";
+}
 
 export type PauseHandlers = {
   onResume: () => void;
@@ -35,6 +41,10 @@ export function bindPauseMenu(handlers: PauseHandlers) {
     "setting-fullscreen",
   ) as HTMLInputElement;
   const fullscreenVal = document.getElementById("setting-fullscreen-val")!;
+  const qualitySelect = document.getElementById(
+    "setting-quality",
+  ) as HTMLSelectElement;
+  const qualityVal = document.getElementById("setting-quality-val")!;
 
   let open = false;
   let settings = loadSettings();
@@ -48,6 +58,8 @@ export function bindPauseMenu(handlers: PauseHandlers) {
     musicVal.textContent = `${Math.round(settings.musicVolume * 100)}%`;
     fullscreenCheck.checked = settings.fullscreen;
     fullscreenVal.textContent = settings.fullscreen ? "On" : "Off";
+    qualitySelect.value = settings.graphicsQuality;
+    qualityVal.textContent = qualityLabel(settings.graphicsQuality);
   }
 
   function showMain(): void {
@@ -128,6 +140,17 @@ export function bindPauseMenu(handlers: PauseHandlers) {
       fullscreen: fullscreenCheck.checked,
     };
     fullscreenVal.textContent = settings.fullscreen ? "On" : "Off";
+    saveSettings(settings);
+    handlers.onSettingsChange(settings);
+  });
+
+  qualitySelect.addEventListener("change", () => {
+    const q = qualitySelect.value as GraphicsQuality;
+    settings = {
+      ...settings,
+      graphicsQuality: q === "low" || q === "high" || q === "medium" ? q : "medium",
+    };
+    qualityVal.textContent = qualityLabel(settings.graphicsQuality);
     saveSettings(settings);
     handlers.onSettingsChange(settings);
   });

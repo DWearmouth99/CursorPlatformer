@@ -5,9 +5,13 @@ import {
   getMapById,
   type AABB,
   type LevelFile,
+  type SpawnZone,
 } from "@fps/shared";
 
-const mapCache = new Map<string, { solids: readonly AABB[]; level: LevelFile }>();
+const mapCache = new Map<
+  string,
+  { solids: readonly AABB[]; level: LevelFile; spawns: readonly SpawnZone[] }
+>();
 
 export function resolveMapPaths(
   clientPublic: string,
@@ -22,7 +26,7 @@ export function resolveMapPaths(
 export function loadMapSolids(
   mapId: string,
   arenaDirs: string[],
-): { solids: readonly AABB[]; level: LevelFile } {
+): { solids: readonly AABB[]; level: LevelFile; spawns: readonly SpawnZone[] } {
   const cached = mapCache.get(mapId);
   if (cached) return cached;
 
@@ -35,7 +39,11 @@ export function loadMapSolids(
     try {
       const level = JSON.parse(fs.readFileSync(filePath, "utf8")) as LevelFile;
       const compiled = compileLevel(level);
-      const entry = { solids: compiled.solids, level };
+      const entry = {
+        solids: compiled.solids,
+        level,
+        spawns: compiled.spawns,
+      };
       mapCache.set(mapId, entry);
       return entry;
     } catch (err) {

@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
 import type { WebSocket } from "ws";
 import {
   GAME_MODE_CATALOG,
@@ -9,10 +9,8 @@ import {
   type LobbySummary,
   type PublicProfile,
 } from "@fps/shared";
-import { createHash, timingSafeEqual } from "node:crypto";
 import { createLobby, type Lobby, type NetPlayer } from "./lobby.js";
 import { loadMapSolids } from "./maps.js";
-import { recordMatchResults } from "./store.js";
 
 const DEFAULT_MAX = 12;
 const LOBBY_IDLE_MS = 1000 * 60 * 20;
@@ -35,6 +33,7 @@ export type ManagedLobby = {
   createdAt: number;
   lastActivity: number;
   instance: Lobby;
+  official: boolean;
 };
 
 function hashPassword(password: string): string {
@@ -48,6 +47,14 @@ function checkPassword(password: string, hash: string | null): boolean {
   const exp = Buffer.from(hash);
   if (got.length !== exp.length) return false;
   return timingSafeEqual(got, exp);
+}
+
+function officialId(mode: GameMode): string {
+  return `official-${mode}`;
+}
+
+function isOfficialId(id: string): boolean {
+  return id === "official" || id.startsWith("official-");
 }
 
 export type LobbyManager = {
@@ -94,50 +101,55 @@ export function createLobbyManager(
     };
   }
 
-  function onMatchComplete(room: ManagedLobby, winnerId: string): void {
-    const results: {
-      accountId: string;
-      kills: number;
-      deaths: number;
-      gunLevel: number;
-      won: boolean;
-    }[] = [];
-    for (const p of room.instance.players.values()) {
-      if (p.isBot || !p.accountId) continue;
-      results.push({
-        accountId: p.accountId,
-        kills: p.kills,
-        deaths: p.deaths,
-        gunLevel: p.gunLevel,
-        won: p.id === winnerId,
-      });
-    }
-    if (results.length > 0) recordMatchResults(results);
+  function advanceMap(room: ManagedLobby): {
+    mapId: string;
+    solids: readonly import("@fps/shared").AABB[];
+    spawns: readonly import("@fps/shared").SpawnZone[];
+  } {
+    const idx = MAP_CATALOG.findIndex((m) => m.id === room.mapId);
+    const next = MAP_CATALOG[(idx + 1 + MAP_CATALOG.length) % MAP_CATALOG.length]!;
+    const loaded = loadMapSolids(next.id, arenaDirs);
+    room.mapId = next.id;
     room.lastActivity = Date.now();
+    return {
+      mapId: next.id,
+      solids: loaded.solids,
+      spawns: loaded.spawns,
+    };
   }
 
-  function spawnDefaultLobby(): ManagedLobby {
-    const mapId = MAP_CATALOG[0]!.id;
-    const { solids } = loadMapSolids(mapId, arenaDirs);
-    const id = "official";
+  function spawnOfficialLobby(mode: GameMode, startMapIndex: number): ManagedLobby {
+    const modeDef = GAME_MODE_CATALOG.find((m) => m.id === mode)!;
+    const mapId = MAP_CATALOG[startMapIndex % MAP_CATALOG.length]!.id;
+    const loaded = loadMapSolids(mapId, arenaDirs);
+    const id = officialId(mode);
+    const name = modeDef.name;
+
+    const roomRef: { current?: ManagedLobby } = {};
     const instance = createLobby({
-      mode: "gun_game",
-      solids,
+      mode,
+      solids: loaded.solids,
+      spawns: loaded.spawns,
       mapId,
       lobbyId: id,
-      lobbyName: "Official Gun Game",
+      lobbyName: name,
       allocId,
-      onMatchComplete: (winnerId) => {
-        const room = rooms.get(id);
-        if (room) onMatchComplete(room, winnerId);
+      onMatchComplete: () => {
+        if (roomRef.current) roomRef.current.lastActivity = Date.now();
+      },
+      nextMap: () => {
+        const room = roomRef.current;
+        if (!room) return null;
+        return advanceMap(room);
       },
     });
+
     const room: ManagedLobby = {
       id,
-      name: "Official Gun Game",
+      name,
       hostUserId: null,
       hostName: "Arena",
-      mode: "gun_game",
+      mode,
       mapId,
       maxPlayers: DEFAULT_MAX,
       isPublic: true,
@@ -145,21 +157,37 @@ export function createLobbyManager(
       createdAt: Date.now(),
       lastActivity: Date.now(),
       instance,
+      official: true,
     };
+    roomRef.current = room;
     rooms.set(id, room);
+    // Legacy alias so old clients joining "official" land in Gun Game
+    if (mode === "gun_game") {
+      rooms.set("official", room);
+    }
+    console.log(`[lobbies] global ${name} ready on ${mapId}`);
     return room;
   }
 
-  spawnDefaultLobby();
+  GAME_MODE_CATALOG.forEach((mode, i) => {
+    spawnOfficialLobby(mode.id, i);
+  });
 
   return {
     listPublic() {
       const out: LobbySummary[] = [];
+      const seen = new Set<string>();
       for (const room of rooms.values()) {
-        if (!room.isPublic) continue;
+        if (!room.isPublic || seen.has(room.id)) continue;
+        seen.add(room.id);
         out.push(summarize(room));
       }
-      out.sort((a, b) => b.players - a.players || b.createdAt - a.createdAt);
+      // Mode catalog order for the play screen
+      out.sort((a, b) => {
+        const ai = GAME_MODE_CATALOG.findIndex((m) => m.id === a.mode);
+        const bi = GAME_MODE_CATALOG.findIndex((m) => m.id === b.mode);
+        return ai - bi;
+      });
       return out;
     },
 
@@ -178,7 +206,7 @@ export function createLobbyManager(
         40,
       );
       const id = randomBytes(5).toString("hex");
-      const { solids } = loadMapSolids(body.mapId, arenaDirs);
+      const loaded = loadMapSolids(body.mapId, arenaDirs);
       const passwordHash = body.password?.trim()
         ? hashPassword(body.password.trim())
         : null;
@@ -186,13 +214,19 @@ export function createLobbyManager(
       const roomRef: { current?: ManagedLobby } = {};
       const instance = createLobby({
         mode: body.mode,
-        solids,
+        solids: loaded.solids,
+        spawns: loaded.spawns,
         mapId: body.mapId,
         lobbyId: id,
         lobbyName: name,
         allocId,
-        onMatchComplete: (winnerId) => {
-          if (roomRef.current) onMatchComplete(roomRef.current, winnerId);
+        onMatchComplete: () => {
+          if (roomRef.current) roomRef.current.lastActivity = Date.now();
+        },
+        nextMap: () => {
+          const room = roomRef.current;
+          if (!room) return null;
+          return advanceMap(room);
         },
       });
 
@@ -209,6 +243,7 @@ export function createLobbyManager(
         createdAt: Date.now(),
         lastActivity: Date.now(),
         instance,
+        official: false,
       };
       roomRef.current = room;
       rooms.set(id, room);
@@ -246,7 +281,7 @@ export function createLobbyManager(
     leaveByWs(ws) {
       for (const room of rooms.values()) {
         room.instance.removeByWs(ws);
-        if (room.id !== "official" && humanCount(room) === 0) {
+        if (!room.official && !isOfficialId(room.id) && humanCount(room) === 0) {
           rooms.delete(room.id);
         }
       }
@@ -262,10 +297,13 @@ export function createLobbyManager(
 
     tickAll() {
       const now = Date.now();
+      const seen = new Set<Lobby>();
       for (const room of rooms.values()) {
+        if (seen.has(room.instance)) continue;
+        seen.add(room.instance);
         room.instance.tickOnce();
         if (
-          room.id !== "official" &&
+          !room.official &&
           humanCount(room) === 0 &&
           now - room.lastActivity > LOBBY_IDLE_MS
         ) {
@@ -275,7 +313,7 @@ export function createLobbyManager(
     },
 
     removeIfEmpty(room) {
-      if (room.id === "official") return;
+      if (room.official || isOfficialId(room.id)) return;
       if (humanCount(room) === 0) rooms.delete(room.id);
     },
   };

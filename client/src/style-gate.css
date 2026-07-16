@@ -614,3 +614,174 @@
 #main-menu .gate-card .menu-setting {
   font-family: "Exo 2", sans-serif;
 }
+
+/* ——— Username gate ——— */
+.gate-name-card {
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.gate-playing-as {
+  font-family: "Exo 2", sans-serif;
+  font-size: 0.88rem;
+  margin: 0.35rem 0 0;
+  opacity: 0.9;
+}
+
+.gate-playing-as b {
+  color: var(--gold, #f2d04a);
+  font-weight: 800;
+}
+
+.gate-lobby-header-simple {
+  align-items: flex-start;
+  margin-bottom: 1.1rem;
+}
+
+/* ——— Global mode lobbies ——— */
+.mode-lobby-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.mode-card {
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(
+    165deg,
+    rgba(92, 52, 22, 0.92) 0%,
+    rgba(58, 31, 12, 0.96) 100%
+  );
+  border: 4px solid var(--wood-line, #3a1f0c);
+  border-radius: 4px;
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 230, 160, 0.1);
+  overflow: hidden;
+  color: #fff4d0;
+  transition: transform 0.18s ease, border-color 0.18s ease;
+}
+
+.mode-card:hover:not(.mode-card-disabled) {
+  transform: translateY(-3px);
+  border-color: #c4884a;
+}
+
+.mode-card-disabled {
+  opacity: 0.62;
+}
+
+.mode-card-preview {
+  height: 110px;
+  position: relative;
+}
+
+.mode-card-preview::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 35%, rgba(20, 10, 4, 0.7));
+}
+
+.mode-card-preview-gun {
+  background:
+    radial-gradient(ellipse 80% 50% at 70% 20%, rgba(180, 220, 255, 0.4), transparent 55%),
+    linear-gradient(180deg, #7eb6d9 0%, #a8c97a 52%, #4f7a3a 100%);
+}
+
+.mode-card-preview-snipers {
+  background:
+    radial-gradient(ellipse 60% 40% at 80% 30%, rgba(255, 255, 255, 0.35), transparent 50%),
+    linear-gradient(180deg, #2a3540 0%, #4a5a68 45%, #1a2228 100%);
+}
+
+.mode-card-preview-koth {
+  background:
+    radial-gradient(circle at 50% 70%, rgba(242, 208, 74, 0.55), transparent 45%),
+    linear-gradient(180deg, #3a5a2a 0%, #6a8a40 40%, #2a4018 100%);
+}
+
+.mode-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.85rem 1rem 1rem;
+  flex: 1;
+}
+
+.mode-card-title {
+  font-family: "Exo 2", sans-serif;
+  font-size: 1.15rem;
+  font-weight: 800;
+  margin: 0;
+  color: #fff8e8;
+  text-shadow: 1px 1px 0 #1a0e06;
+}
+
+.mode-card-blurb {
+  font-family: "Exo 2", sans-serif;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  margin: 0;
+  opacity: 0.82;
+  flex: 1;
+}
+
+.mode-card-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-family: "Exo 2", sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.mode-card-map {
+  opacity: 0.85;
+  color: #ffeaa7;
+}
+
+.mode-card-count {
+  color: var(--gold, #f2d04a);
+  white-space: nowrap;
+}
+
+.mode-card-fill {
+  height: 5px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.mode-card-fill > div {
+  height: 100%;
+  background: linear-gradient(90deg, #c4884a, #f2d04a);
+}
+
+.mode-card .mode-join-btn {
+  width: 100%;
+  margin-top: 0.25rem;
+}
+
+.mode-card .mode-join-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+@media (max-width: 820px) {
+  .mode-lobby-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .gate-layout {
+    width: min(480px, 94vw);
+  }
+}
+
+@media (min-width: 821px) {
+  .gate-layout {
+    width: min(980px, 94vw);
+  }
+}

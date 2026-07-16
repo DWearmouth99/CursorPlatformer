@@ -37,10 +37,15 @@ import { createInterpolator } from "./net/interpolation";
 import { createRemotePlayers } from "./remotePlayers";
 import { createHud } from "./hud";
 import { createEffects } from "./fx";
+import {
+  createPassthroughPostFx,
+  createPostFx,
+  type PostFx,
+} from "./postfx";
 import { createAudio } from "./audio";
-import { showMainMenu } from "./menu";
+import { showMainMenu, stashAutoplay } from "./menu";
 import { bindPauseMenu } from "./pauseMenu";
-import { loadSettings } from "./settings";
+import { loadSettings, pixelRatioForQuality, type GameSettings } from "./settings";
 import {
   enterPlayMode,
   exitPlayMode,
@@ -95,9 +100,13 @@ export async function startGame(container: HTMLElement) {
   overlayHint.textContent = "Loading arena…";
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.08;
+  renderer.setPixelRatio(pixelRatioForQuality(initialSettings.graphicsQuality));
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.shadowMap.enabled = false;
+  renderer.shadowMap.enabled = initialSettings.graphicsQuality !== "low";
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -110,9 +119,38 @@ export async function startGame(container: HTMLElement) {
   scene.add(camera);
 
   overlayHint.textContent = `Loading ${selection.lobbyName}…`;
-  const world = await createWorld(scene, arenaUrlForMap(selection.mapId));
-  overlayHint.textContent = "Connecting to server…";
+  const world = await createWorld(scene, arenaUrlForMap(selection.mapId), {
+    renderer,
+    quality: initialSettings.graphicsQuality,
+  });
+  overlayHint.textContent = "Preparing match…";
+
   const remotes = createRemotePlayers(scene);
+  const _tpMuzzle = new THREE.Vector3();
+  // Start with a no-composer path so join never blocks on EffectComposer/N8AO.
+  let postFx: PostFx = createPassthroughPostFx(renderer, scene, camera);
+  let gfxQuality = initialSettings.graphicsQuality;
+
+  function applyGraphicsSettings(s: GameSettings): void {
+    renderer.setPixelRatio(pixelRatioForQuality(s.graphicsQuality));
+    renderer.shadowMap.enabled = s.graphicsQuality !== "low";
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    world.atmosphere.applyQuality(s.graphicsQuality);
+    if (s.graphicsQuality !== gfxQuality) {
+      gfxQuality = s.graphicsQuality;
+      const next = createPostFx(
+        renderer,
+        scene,
+        camera,
+        s.graphicsQuality,
+      );
+      postFx.dispose();
+      postFx = next;
+    } else {
+      postFx.setQuality(s.graphicsQuality);
+    }
+  }
+  applyGraphicsSettings(initialSettings);
   let gunLevel = 0;
   let localMoveMult = 1;
   let localStatusText = "";
@@ -247,7 +285,10 @@ export async function startGame(container: HTMLElement) {
 
   const interpolator = createInterpolator();
   const hud = createHud();
-  const fx = createEffects(scene, camera);
+  const fx = createEffects(scene, camera, {
+    onExplosion: (at) => postFx.pulseExplosion(at),
+    onMuzzleFlash: () => postFx.pulseFlash(),
+  });
   const audio = createAudio();
   const input = createInput(0);
   input.bind();
@@ -278,6 +319,7 @@ export async function startGame(container: HTMLElement) {
       input.setUserSens(s.mouseSens);
       audio.setVolume(s.volume);
       audio.setMusicVolume(s.musicVolume);
+      applyGraphicsSettings(s);
       // Apply fullscreen preference immediately while paused / in-game.
       void enterPlayMode(document.documentElement, {
         fullscreen: s.fullscreen,
@@ -329,14 +371,27 @@ export async function startGame(container: HTMLElement) {
     const winnerLabel = winner?.displayName ?? winnerId;
     const modeLabel = modeTitle(gameMode);
     overlayHint.textContent = you
-      ? `You win ${modeLabel}\nReturning to lobby…`
-      : `${winnerLabel} wins ${modeLabel}\nReturning to lobby…`;
+      ? `You win ${modeLabel}\nNext map loading…`
+      : `${winnerLabel} wins ${modeLabel}\nNext map loading…`;
     const title = overlay.querySelector(".overlay-title");
     if (title) title.textContent = you ? "Victory" : "Match Over";
+    // Fallback if mapChange is missed (server freeze ~8s)
     window.setTimeout(() => {
-      socket.close();
-      window.location.reload();
-    }, 6500);
+      if (!matchOver) return;
+      rejoinAfterMap(selection.mapId);
+    }, 12000);
+  }
+
+  function rejoinAfterMap(mapId: string): void {
+    stashAutoplay({
+      lobbyId: selection.lobbyId,
+      lobbyName: selection.lobbyName,
+      mapId,
+      mode: gameMode,
+      displayName: selection.displayName,
+    });
+    socket.close();
+    window.location.reload();
   }
 
   loadoutGrid.onclick = (ev) => {
@@ -371,7 +426,6 @@ export async function startGame(container: HTMLElement) {
         type: "join",
         mode: selection.mode,
         lobbyId: selection.lobbyId,
-        token: selection.token,
         displayName: selection.displayName,
       });
     },
@@ -524,25 +578,39 @@ export async function startGame(container: HTMLElement) {
       } else if (msg.type === "hitConfirm") {
         hud.showHitMarker(msg.isHeadshot);
         audio.hitConfirm(msg.isHeadshot);
+        remotes.pulseHit(msg.targetId);
       } else if (msg.type === "damage") {
         localHp = msg.hp;
         hud.showDamageFlash(msg.amount);
         audio.hurt();
+        postFx.pulseDamage(msg.amount);
       } else if (msg.type === "killFeed") {
         const killer = latestPlayers.find((p) => p.id === msg.killerId);
         const victim = latestPlayers.find((p) => p.id === msg.victimId);
         hud.pushKill(msg.killerId, msg.victimId, {
           headshot: !!msg.isHeadshot,
+          meleeDemote: !!msg.meleeDemote,
           localId,
           killerName: killer?.displayName,
           victimName: victim?.displayName,
         });
+        if (msg.victimId !== localId) {
+          remotes.startDeath(
+            msg.victimId,
+            killer?.position.x,
+            killer?.position.z,
+          );
+        }
       } else if (msg.type === "shot") {
         if (msg.shooterId === localId) return;
         {
           const w = resolveWeapon(msg.weaponId);
+          const tip = _tpMuzzle;
+          const origin = remotes.getMuzzleWorld(msg.shooterId, tip)
+            ? { x: tip.x, y: tip.y, z: tip.z }
+            : msg.origin;
           fx.remoteShot(
-            msg.origin,
+            origin,
             msg.end,
             msg.hitPlayer,
             performance.now(),
@@ -551,15 +619,29 @@ export async function startGame(container: HTMLElement) {
           audio.shoot(false, w);
         }
       } else if (msg.type === "gunAdvance") {
+        const prevLevel =
+          latestPlayers.find((p) => p.id === msg.playerId)?.gunLevel ?? gunLevel;
+        const demoted = msg.gunLevel < prevLevel;
         if (msg.playerId === localId) {
           gunLevel = msg.gunLevel;
           const w = gunGameWeapon(gunLevel);
           localMag = w.magSize;
           localAmmo = w.magSize;
           localReloading = false;
-          hud.pushKillFeed(`Unlocked · ${msg.weaponName}`);
+          hud.pushKillFeed(
+            demoted
+              ? `Demoted · ${msg.weaponName}`
+              : `Unlocked · ${msg.weaponName}`,
+          );
         } else {
-          hud.pushKillFeed(`${msg.playerId} unlocked · ${msg.weaponName}`);
+          const name =
+            latestPlayers.find((p) => p.id === msg.playerId)?.displayName ??
+            msg.playerId;
+          hud.pushKillFeed(
+            demoted
+              ? `${name} demoted · ${msg.weaponName}`
+              : `${name} unlocked · ${msg.weaponName}`,
+          );
         }
       } else if (msg.type === "loadoutChanged") {
         if (msg.playerId === localId) {
@@ -574,6 +656,9 @@ export async function startGame(container: HTMLElement) {
             : `${msg.playerId} wins ${modeTitle(gameMode)}`,
         );
         endMatch(msg.playerId);
+      } else if (msg.type === "mapChange") {
+        overlayHint.textContent = `Loading ${msg.mapName ?? msg.mapId}…`;
+        rejoinAfterMap(msg.mapId);
       }
     },
   });
@@ -581,6 +666,19 @@ export async function startGame(container: HTMLElement) {
   overlayHint.textContent =
     `Connecting to ${socket.url}…\n(Free hosts can take up to a minute to wake)`;
   socket.connect();
+
+  // Defer composer build so the WS handshake can complete on the main thread.
+  // (Sync EffectComposer/N8AO init was starving onOpen / welcome.)
+  if (initialSettings.graphicsQuality !== "low") {
+    window.setTimeout(() => {
+      try {
+        gfxQuality = "low"; // force recreate for medium/high
+        applyGraphicsSettings(initialSettings);
+      } catch (err) {
+        console.error("[postfx] deferred init failed", err);
+      }
+    }, 0);
+  }
 
   function requestLock() {
     if (!welcomed || matchOver || pauseMenu.isOpen() || loadoutPending) return;
@@ -644,7 +742,7 @@ export async function startGame(container: HTMLElement) {
   window.addEventListener("resize", () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    postFx.setSize(window.innerWidth, window.innerHeight);
   });
 
   let last = performance.now();
@@ -857,7 +955,10 @@ export async function startGame(container: HTMLElement) {
     const ads = buttons.ads && localAlive;
 
     world.updateSky(frameDt, now);
-    remotes.sync(interpolator.sample(localId, now), frameDt);
+    const protectedIds = new Set(
+      latestPlayers.filter((p) => p.protected).map((p) => p.id),
+    );
+    remotes.sync(interpolator.sample(localId, now), frameDt, protectedIds);
     syncWeaponVisual();
     fx.update(now, frameDt, localAlive, localAlive && player.grounded && spd > 1.2, {
       ads,
@@ -989,7 +1090,7 @@ export async function startGame(container: HTMLElement) {
       `pos  ${player.position.x.toFixed(2)}  ${player.position.y.toFixed(2)}  ${player.position.z.toFixed(2)}\n` +
       `spd  ${spd.toFixed(2)} m/s`;
 
-    renderer.render(scene, camera);
+    postFx.render(frameDt);
     requestAnimationFrame(frame);
   }
 

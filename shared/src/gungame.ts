@@ -1,4 +1,25 @@
 import type { WeaponDef, WeaponFx } from "./weapons.js";
+import {
+  FALLOFF_CLOSE_END_M,
+  FALLOFF_CLOSE_START_M,
+  FALLOFF_MIN_MULT_DEFAULT,
+  FALLOFF_RIFLE_END_M,
+  FALLOFF_RIFLE_START_M,
+} from "./constants.js";
+
+/** SMG / pistol / shotgun hitscan falloff. */
+const FALLOFF_CLOSE = {
+  falloffStart: FALLOFF_CLOSE_START_M,
+  falloffEnd: FALLOFF_CLOSE_END_M,
+  falloffMinMult: FALLOFF_MIN_MULT_DEFAULT,
+} as const;
+
+/** Rifle hitscan falloff. Snipers omit falloff entirely. */
+const FALLOFF_RIFLE = {
+  falloffStart: FALLOFF_RIFLE_START_M,
+  falloffEnd: FALLOFF_RIFLE_END_M,
+  falloffMinMult: FALLOFF_MIN_MULT_DEFAULT,
+} as const;
 
 const RECOIL_SPAM: readonly [number, number][] = [
   [0.15, 0.12],
@@ -55,6 +76,9 @@ type GgPartial = Omit<
       | "scopeStyle"
       | "maxRange"
       | "meleeCone"
+      | "falloffStart"
+      | "falloffEnd"
+      | "falloffMinMult"
       | "fx"
       | "viewmodel"
       | "semiAuto"
@@ -82,6 +106,9 @@ function gg(id: string, name: string, partial: GgPartial): WeaponDef {
     scopeStyle: partial.scopeStyle ?? "iron",
     maxRange: partial.maxRange,
     meleeCone: partial.meleeCone,
+    falloffStart: partial.falloffStart,
+    falloffEnd: partial.falloffEnd,
+    falloffMinMult: partial.falloffMinMult,
     fx: partial.fx,
     viewmodel: partial.viewmodel,
     semiAuto: partial.semiAuto,
@@ -136,6 +163,7 @@ export function resolveAnimProfile(
 const meme = {
   pea: () =>
     gg("gg_pea", "Pea Shooter", {
+      ...FALLOFF_CLOSE,
       fireStyle: "auto",
       animProfile: "spray",
       sfx: "pea",
@@ -165,6 +193,7 @@ const meme = {
     }),
   chicken: () =>
     gg("gg_chicken", "Rubber Chicken", {
+      ...FALLOFF_CLOSE,
       fireStyle: "semi",
       animProfile: "punch",
       sfx: "chicken",
@@ -224,6 +253,7 @@ const meme = {
     }),
   confetti: () =>
     gg("gg_confetti", "Confetti SMG", {
+      ...FALLOFF_CLOSE,
       fireStyle: "shotgun",
       animProfile: "spray",
       sfx: "smg",
@@ -253,6 +283,7 @@ const meme = {
     }),
   bees: () =>
     gg("gg_bees", "Beehive Blaster", {
+      ...FALLOFF_CLOSE,
       fireStyle: "shotgun",
       animProfile: "pump",
       sfx: "shotty",
@@ -284,6 +315,7 @@ const meme = {
     }),
   noodle: () =>
     gg("gg_noodle", "Noodle Launcher", {
+      ...FALLOFF_RIFLE,
       fireStyle: "semi",
       animProfile: "toss",
       sfx: "wet",
@@ -346,6 +378,7 @@ const meme = {
     }),
   bubble: () =>
     gg("gg_bubble", "Bubble Blaster", {
+      ...FALLOFF_CLOSE,
       fireStyle: "shotgun",
       animProfile: "kick",
       sfx: "wet",
@@ -375,6 +408,7 @@ const meme = {
     }),
   disco: () =>
     gg("gg_disco", "Disco Shotgun", {
+      ...FALLOFF_CLOSE,
       fireStyle: "shotgun",
       animProfile: "spin",
       sfx: "shotty",
@@ -436,6 +470,7 @@ const meme = {
     }),
   soaker: () =>
     gg("gg_soaker", "Super Soaker", {
+      ...FALLOFF_CLOSE,
       fireStyle: "auto",
       animProfile: "spray",
       sfx: "wet",
@@ -466,6 +501,7 @@ const meme = {
     }),
   accordion: () =>
     gg("gg_accordion", "Accordion Shotty", {
+      ...FALLOFF_CLOSE,
       fireStyle: "shotgun",
       animProfile: "pump",
       sfx: "shotty",
@@ -495,6 +531,7 @@ const meme = {
     }),
   shrink: () =>
     gg("gg_shrink", "Shrink Ray", {
+      ...FALLOFF_CLOSE,
       fireStyle: "auto",
       animProfile: "kick",
       sfx: "zap",
@@ -555,6 +592,7 @@ const meme = {
     }),
   flappy: () =>
     gg("gg_flappy", "Flappy Burst", {
+      ...FALLOFF_CLOSE,
       fireStyle: "burst",
       burstCount: 3,
       animProfile: "spin",
@@ -619,6 +657,7 @@ const meme = {
     }),
   pointer: () =>
     gg("gg_pointer", "Laser Pointer of Doom", {
+      ...FALLOFF_CLOSE,
       fireStyle: "auto",
       animProfile: "kick",
       sfx: "zap",
@@ -648,6 +687,7 @@ const meme = {
     }),
   bananaPeel: () =>
     gg("gg_banana_peel", "Banana Peel SMG", {
+      ...FALLOFF_CLOSE,
       fireStyle: "auto",
       animProfile: "spray",
       sfx: "smg",
@@ -711,6 +751,7 @@ const meme = {
     }),
   golden: () =>
     gg("gg_golden", "Golden Banana", {
+      ...FALLOFF_CLOSE,
       fireStyle: "semi",
       animProfile: "punch",
       sfx: "zap",
@@ -747,6 +788,7 @@ const meme = {
 const real = {
   pew: () =>
     gg("real_pew", "PEW", {
+      ...FALLOFF_CLOSE,
       viewmodel: "pew.glb",
       fireStyle: "semi",
       animProfile: "punch",
@@ -778,6 +820,7 @@ const real = {
     }),
   mac10: () =>
     gg("real_mac10", "MAC-10", {
+      ...FALLOFF_CLOSE,
       viewmodel: "mac10.glb",
       fireStyle: "auto",
       animProfile: "spray",
@@ -809,6 +852,7 @@ const real = {
     }),
   shotgun: () =>
     gg("real_shotgun", "Shotgun", {
+      ...FALLOFF_CLOSE,
       viewmodel: "shotgun.glb",
       fireStyle: "shotgun",
       animProfile: "pump",
@@ -839,6 +883,7 @@ const real = {
     }),
   ak47: () =>
     gg("real_ak47", "AK-47", {
+      ...FALLOFF_RIFLE,
       viewmodel: "ak47.glb",
       fireStyle: "auto",
       animProfile: "kick",
@@ -870,6 +915,7 @@ const real = {
     }),
   ak47variant: () =>
     gg("real_ak47variant", "AK-47 Variant", {
+      ...FALLOFF_RIFLE,
       viewmodel: "ak47variant.glb",
       fireStyle: "auto",
       animProfile: "kick",

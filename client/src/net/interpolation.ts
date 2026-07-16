@@ -36,6 +36,9 @@ export type InterpolatedRemote = {
   veiled: boolean;
   /** Shrink Ray status — render tiny. */
   shrunk: boolean;
+  /** Active weapon for third-person gun mesh. */
+  weaponId: string;
+  grounded: boolean;
 };
 
 /**
@@ -116,6 +119,8 @@ export function createInterpolator() {
         alive: b.alive,
         veiled: (b.status?.veiledUntil ?? 0) > newer.tick,
         shrunk: (b.status?.shrinkUntil ?? 0) > newer.tick,
+        weaponId: b.weaponId ?? "",
+        grounded: b.grounded,
       });
     }
 

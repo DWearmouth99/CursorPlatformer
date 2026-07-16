@@ -134,6 +134,8 @@ export type SnapshotPlayer = {
   score: number;
   /** Account or guest display name. */
   displayName: string;
+  /** True while spawn protection is active (optional; older clients ignore). */
+  protected?: boolean;
 };
 
 export type WelcomeMsg = {
@@ -200,6 +202,8 @@ export type KillFeedMsg = {
   killerId: string;
   victimId: string;
   isHeadshot: boolean;
+  /** Gun Game: melee kill knocked the victim down a weapon tier. */
+  meleeDemote?: boolean;
 };
 
 export type ShotMsg = {
@@ -239,6 +243,13 @@ export type MatchWinMsg = {
   mode: GameMode;
 };
 
+/** Broadcast when a lobby rotates to the next map after a victory. */
+export type MapChangeMsg = {
+  type: "mapChange";
+  mapId: string;
+  mapName?: string;
+};
+
 export type LoadoutChangedMsg = {
   type: "loadoutChanged";
   playerId: string;
@@ -260,6 +271,7 @@ export type ServerMsg =
   | GunAdvanceMsg
   | GunGameWinMsg
   | MatchWinMsg
+  | MapChangeMsg
   | LoadoutChangedMsg;
 
 export type ClientMsg = JoinMsg | ChangeClassMsg | InputCmd | SelectLoadoutMsg;

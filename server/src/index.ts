@@ -50,7 +50,7 @@ function onMessage(ws: WebSocket, session: Session | null, raw: string): void {
 }
 
 function handleJoin(ws: WebSocket, msg: JoinMsg): void {
-  const lobbyId = msg.lobbyId?.trim() || "official";
+  const lobbyId = msg.lobbyId?.trim() || "official-gun_game";
   const room = lobbies.get(lobbyId);
   if (!room) {
     ws.close(4004, "Lobby not found");
